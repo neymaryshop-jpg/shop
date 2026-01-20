@@ -148,8 +148,8 @@ app.get('/api/payment-methods', async (req: Request, res: Response) => {
       WHERE key LIKE 'payment_%'
     `);
 
-    const getValue = (key: string) => 
-      result.rows.find(r => r.key === key)?.value || '';
+const getValue = (key: string) =>
+  result.rows.find((r: any) => r.key === key)?.value || '';
 
     const methods = [
       {

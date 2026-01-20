@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -47,27 +49,31 @@ services:
     restart: unless-stopped
     command: >
       redis-server
-      --maxmemory 256mb
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 512mb
       --maxmemory-policy allkeys-lru
       --save 900 1
       --save 300 10
       --save 60 10000
-      --appendonly no
+      --appendonly yes
+      --appendfsync everysec
+      --protected-mode yes
       --tcp-backlog 128
       --timeout 300
       --tcp-keepalive 60
     volumes:
       - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M
           cpus: '0.3'
         reservations:
-          memory: 128M
+          memory: 256M
           cpus: '0.2'
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -79,35 +85,54 @@ services:
     container_name: neymaryshop_backend
     restart: unless-stopped
     environment:
-      NODE_ENV: production
-      DATABASE_URL: postgresql://neymary:${DB_PASSWORD}@postgres:5432/neymary
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      PORT: 3001
-      ADMIN_TOKEN: ${ADMIN_TOKEN}
+      # Безопасность
+      - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - TOTP_WINDOW=1
+      - BCRYPT_SALT_ROUNDS=12
+      - RATE_LIMIT_WINDOW_MS=900000
+      - RATE_LIMIT_MAX_REQUESTS=100
+      - SESSION_TIMEOUT=3600000
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      
+      # Telegram
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME}
+      
+      # URLs
+      - FRONTEND_URL=${FRONTEND_URL}
+      - BACKEND_URL=${BACKEND_URL}
+      - PORT=3001
+      
+      # Базы данных
+      - DATABASE_URL=postgresql://neymary:${DB_PASSWORD}@postgres:5432/neymary
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
     ports:
       - "3001:3001"
+    volumes:
+      - ./backend/logs:/app/logs
+      - ./backend/uploads:/app/uploads
+      - ./backend/security-logs:/app/security-logs
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - ./backend/logs:/app/logs
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.7'
-        reservations:
-          memory: 256M
-          cpus: '0.4'
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
 
   frontend:
     build:
@@ -147,7 +172,7 @@ services:
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       DATABASE_URL: postgresql://neymary:${DB_PASSWORD}@postgres:5432/neymary
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       ADMIN_IDS: ${ADMIN_IDS}
     depends_on:
       postgres:

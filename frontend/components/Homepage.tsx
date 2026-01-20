@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import Hero3D from './Hero3D';
 
 // Типы данных
 interface Product {
@@ -516,11 +515,6 @@ export default function Homepage() {
           </button>
         </div>
       </nav>
-
-      {/* Hero секция */}
-      <div id="hero" className="pt-16">
-        <Hero3D />
-      </div>
 
       {/* Каталог */}
       <section id="catalog" className="py-20 px-4">

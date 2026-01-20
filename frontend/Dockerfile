@@ -6,8 +6,8 @@ WORKDIR /app
 COPY package*.json ./
 
 # Устанавливаем только production зависимости
-RUN npm ci --only=production --ignore-scripts && \
-    npm cache clean --force
+RUN npm install --omit=dev --ignore-scripts --legacy-peer-deps
+RUN npm cache clean --force
 
 # Builder stage
 FROM node:22-alpine AS builder
