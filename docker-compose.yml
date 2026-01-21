@@ -1,124 +1,121 @@
+# docker-compose.yml (ИСПРАВЛЕННАЯ ВЕРСИЯ)
 version: '3.8'
 
 services:
+  # ========== TON ИНТЕГРАЦИЯ ==========
+  ton-proxy:
+    image: tonutils/reverse-proxy:latest
+    container_name: neymaryshop_ton_proxy
+    restart: unless-stopped
+    environment:
+      - TON_NETWORK=${TON_NETWORK:-mainnet}
+      - TON_API_KEY=${TON_API_KEY}
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./ton-config:/config
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   postgres:
     image: postgres:15-alpine
     container_name: neymaryshop_db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: neymary
-      POSTGRES_USER: neymary
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-neymaryshop}
+      POSTGRES_USER: ${POSTGRES_USER:-neymary}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"  # ✅ Динамический порт
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./database/migrations:/docker-entrypoint-initdb.d/migrations
     command: >
       postgres
       -c shared_buffers=256MB
-      -c work_mem=4MB
-      -c maintenance_work_mem=64MB
-      -c max_connections=20
-      -c effective_cache_size=1GB
-      -c wal_buffers=1MB
-      -c checkpoint_completion_target=0.9
-      -c random_page_cost=1.1
-      -c effective_io_concurrency=200
-      -c min_wal_size=1GB
-      -c max_wal_size=2GB
-      -c max_worker_processes=2
-      -c max_parallel_workers_per_gather=1
-      -c max_parallel_workers=2
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-        reservations:
-          memory: 256M
-          cpus: '0.3'
+      -c max_connections=50  # ✅ Увеличено для TON-листенеров
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U neymary"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-neymary}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
     container_name: neymaryshop_redis
     restart: unless-stopped
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     command: >
       redis-server
       --requirepass ${REDIS_PASSWORD}
       --maxmemory 512mb
       --maxmemory-policy allkeys-lru
       --save 900 1
-      --save 300 10
-      --save 60 10000
       --appendonly yes
-      --appendfsync everysec
-      --protected-mode yes
-      --tcp-backlog 128
-      --timeout 300
-      --tcp-keepalive 60
     volumes:
       - redis_data:/data
-      - ./redis.conf:/usr/local/etc/redis/redis.conf
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.3'
-        reservations:
-          memory: 256M
-          cpus: '0.2'
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        NODE_ENV: production
     container_name: neymaryshop_backend
     restart: unless-stopped
     environment:
-      # Безопасность
-      - NODE_ENV=production
-      - JWT_SECRET=${JWT_SECRET}
-      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
-      - TOTP_WINDOW=1
-      - BCRYPT_SALT_ROUNDS=12
-      - RATE_LIMIT_WINDOW_MS=900000
-      - RATE_LIMIT_MAX_REQUESTS=100
-      - SESSION_TIMEOUT=3600000
-      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      NODE_ENV: production
+      PORT: ${BACKEND_PORT:-3001}
+      
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-neymary}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-neymaryshop}
+      
+      # Redis (✅ ИСПРАВЛЕНО)
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      
+      # JWT & Security
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      ADMIN_TOKEN: ${ADMIN_TOKEN}
+      
+      # TON Integration (✅ ДОБАВЛЕНО)
+      TON_NETWORK: ${TON_NETWORK:-mainnet}
+      TON_API_URL: http://ton-proxy:8081
+      TON_WALLET_ADDRESS: ${TON_WALLET_ADDRESS}
+      TON_WALLET_MNEMONIC: ${TON_WALLET_MNEMONIC}
+      TON_API_KEY: ${TON_API_KEY}
       
       # Telegram
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       
-      # URLs
-      - FRONTEND_URL=${FRONTEND_URL}
-      - BACKEND_URL=${BACKEND_URL}
-      - PORT=3001
+      # Frontend URL
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       
-      # Базы данных
-      - DATABASE_URL=postgresql://neymary:${DB_PASSWORD}@postgres:5432/neymary
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
     ports:
-      - "3001:3001"
-    volumes:
-      - ./backend/logs:/app/logs
-      - ./backend/uploads:/app/uploads
-      - ./backend/security-logs:/app/security-logs
+      - "${BACKEND_PORT:-3001}:3001"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      ton-proxy:
+        condition: service_healthy
+    volumes:
+      - ./backend/logs:/app/logs
+      - ./backend/uploads:/app/uploads
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
       interval: 30s
@@ -130,9 +127,6 @@ services:
         limits:
           memory: 1G
           cpus: '1.0'
-        reservations:
-          memory: 512M
-          cpus: '0.5'
 
   frontend:
     build:
@@ -140,6 +134,7 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_TON_NETWORK: ${TON_NETWORK:-mainnet}
     container_name: neymaryshop_frontend
     restart: unless-stopped
     environment:
@@ -149,14 +144,6 @@ services:
       - "3000:3000"
     depends_on:
       - backend
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-        reservations:
-          memory: 256M
-          cpus: '0.3'
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
       interval: 30s
@@ -171,26 +158,18 @@ services:
     restart: unless-stopped
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      DATABASE_URL: postgresql://neymary:${DB_PASSWORD}@postgres:5432/neymary
+      DATABASE_URL: postgresql://${POSTGRES_USER:-neymary}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-neymaryshop}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       ADMIN_IDS: ${ADMIN_IDS}
+      BACKEND_URL: http://backend:3001
+      TON_API_URL: http://ton-proxy:8081
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
+      - postgres
+      - redis
+      - backend
+      - ton-proxy
     volumes:
       - ./telegram-bot/logs:/app/logs
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: '0.3'
-        reservations:
-          memory: 128M
-          cpus: '0.2'
 
   nginx:
     image: nginx:alpine
@@ -203,17 +182,10 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - nginx_cache:/var/cache/nginx
+      - ./logs/nginx:/var/log/nginx
     depends_on:
       - frontend
       - backend
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-          cpus: '0.2'
-        reservations:
-          memory: 64M
-          cpus: '0.1'
 
 volumes:
   postgres_data:
