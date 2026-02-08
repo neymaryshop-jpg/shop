@@ -53,7 +53,7 @@ RUN mkdir -p /app/uploads /app/logs && \
 
 USER nodejs
 
-EXPOSE 3001
+EXPOSE 3002
 
 # Запускаем через tsx (для разработки) или напрямую
 CMD ["node", "dist/index.js"]

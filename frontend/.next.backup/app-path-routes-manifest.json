@@ -1,0 +1,14 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/categories/page": "/categories",
+  "/contacts/page": "/contacts",
+  "/page": "/",
+  "/verify-2fa/page": "/verify-2fa",
+  "/forgot-password/page": "/forgot-password",
+  "/cart/page": "/cart",
+  "/login/page": "/login",
+  "/products/page": "/products",
+  "/catalog/page": "/catalog",
+  "/register/page": "/register",
+  "/reset-password/page": "/reset-password"
+}

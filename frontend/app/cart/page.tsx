@@ -107,7 +107,7 @@ export default function CartPage() {
       await axios.delete(`${API_URL}/cart/remove`, 
         { 
           data: { product_id: item.product_id, platform: item.platform },
-          headers: { 'Authorization': `Bearer ${token}` }}
+          headers: { 'Authorization': `Bearer ${token}` }
         }
       )
       
@@ -125,8 +125,9 @@ export default function CartPage() {
     return cartItems.reduce((total, item) => total + item.quantity, 0)
   }
 
-  const formatPrice = (price: number) => {
-    return price.toFixed(2)
+  const formatPrice = (price: number | string) => {
+    const numPrice = typeof price === 'string' ? parseFloat(price) : price
+    return isNaN(numPrice) ? '0.00' : numPrice.toFixed(2)
   }
 
   if (loading) {

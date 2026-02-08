@@ -9,9 +9,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 interface Product {
   id: number
   name: string
-  price_android: number
-  price_pc: number
-  price_ios: number
+  price_android: number | string
+  price_pc: number | string
+  price_ios: number | string
   image_url?: string
   category_name: string
   description?: string
@@ -39,14 +39,11 @@ export default function CatalogPage() {
   const [userPlatform, setUserPlatform] = useState<'android' | 'pc' | 'ios'>('android')
 
   useEffect(() => {
-    const userAgent = navigator.userAgent.toLowerCase()
-    if (userAgent.includes('android')) {
-      setUserPlatform('android')
-    } else if (userAgent.includes('iphone') || userAgent.includes('ipad')) {
-      setUserPlatform('ios')
-    } else {
-      setUserPlatform('pc')
+    const savedPlatform = localStorage.getItem('user_platform') as 'android' | 'pc' | 'ios' | null
+    if (savedPlatform) {
+      setUserPlatform(savedPlatform)
     }
+    // Don't auto-detect, let user choose manually
     
     loadCategories()
     loadProducts()
@@ -86,16 +83,21 @@ export default function CatalogPage() {
   }
 
   const getPriceForPlatform = (product: Product) => {
+    let price: number | string
     switch (userPlatform) {
       case 'android':
-        return product.price_android
+        price = product.price_android
+        break
       case 'ios':
-        return product.price_ios
+        price = product.price_ios
+        break
       case 'pc':
-        return product.price_pc
+        price = product.price_pc
+        break
       default:
-        return product.price_android
+        price = product.price_android
     }
+    return typeof price === 'string' ? parseFloat(price) : price
   }
 
   const handleAddToCart = async (productId: number, productName: string) => {
@@ -164,7 +166,10 @@ export default function CatalogPage() {
               ].map((platform) => (
                 <button
                   key={platform.id}
-                  onClick={() => setUserPlatform(platform.id as any)}
+                  onClick={() => {
+                      setUserPlatform(platform.id as any)
+                      localStorage.setItem('user_platform', platform.id)
+                    }}
                   className={`px-4 py-2 rounded-lg font-medium transition-all ${
                     userPlatform === platform.id
                       ? 'bg-purple-600 text-white'

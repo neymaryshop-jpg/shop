@@ -1,444 +1,765 @@
-import os
 import asyncio
 import logging
+import os
+import subprocess
+import sys
+import requests
+import json
 from datetime import datetime
-from typing import Optional
-import aiohttp
-from pathlib import Path
+from dotenv import load_dotenv
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
-from aiogram import Bot, Dispatcher, F, Router
-from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-import asyncpg
-from redis import asyncio as aioredis
+# Загрузка переменных окружения
+load_dotenv()
 
-# Логирование
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Настройка логирования
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
-# Конфигурация
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-DATABASE_URL = os.getenv('DATABASE_URL')
-REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379')
-ADMIN_IDS = [int(x) for x in os.getenv('ADMIN_IDS', '').split(',') if x]
-BACKEND_URL = os.getenv('BACKEND_URL', 'http://backend:3001')
+# Настройки БД
+DB_URL = os.getenv('DATABASE_URL', 'postgresql://user:password@localhost:5432/neymaryshop')
 
-# FSM States
-class AddProductStates(StatesGroup):
-    waiting_for_name = State()
-    waiting_for_category = State()
-    waiting_for_cost = State()
-    waiting_for_commission = State()
-    waiting_for_image = State()
+# ID супер-админа (замените на ваш Telegram ID)
+SUPER_ADMIN_ID = int(os.getenv('SUPER_ADMIN_TELEGRAM_ID', '0'))
 
-class AddCategoryStates(StatesGroup):
-    waiting_for_name = State()
-    waiting_for_slug = State()
-    waiting_for_description = State()
-    waiting_for_icon = State()
-
-class DeleteStates(StatesGroup):
-    waiting_for_id = State()
-
-class BroadcastStates(StatesGroup):
-    waiting_for_message = State()
-
-# Database pool
-db_pool: Optional[asyncpg.Pool] = None
-
-async def init_db():
-    global db_pool
-    db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=5, command_timeout=60)
-    logger.info("Database pool initialized")
-
-async def close_db():
-    global db_pool
-    if db_pool:
-        await db_pool.close()
-
-def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
-
-# Bot setup
-redis = aioredis.from_url(REDIS_URL)
-storage = RedisStorage(redis)
-bot = Bot(token=TELEGRAM_BOT_TOKEN)
-dp = Dispatcher(storage=storage)
-router = Router()
-
-# Функция загрузки файла в backend
-async def upload_file(file_data: bytes, filename: str, mime_type: str) -> dict:
-    try:
-        async with aiohttp.ClientSession() as session:
-            form = aiohttp.FormData()
-            form.add_field('file', file_data, filename=filename, content_type=mime_type)
-            async with session.post(f'{BACKEND_URL}/api/upload', data=form) as resp:
-                if resp.status == 200:
-                    return await resp.json()
-    except Exception as e:
-        logger.error(f"Upload error: {e}")
-    return None
-
-# === КОМАНДЫ ===
-
-@router.message(Command("start"))
-async def cmd_start(message: Message):
-    if not is_admin(message.from_user.id):
-        await message.answer("⛔ Доступ запрещён.")
-        return
+class BotDatabase:
+    def __init__(self):
+        self.conn = None
     
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📦 Добавить товар"), KeyboardButton(text="📂 Добавить категорию")],
-            [KeyboardButton(text="📋 Список товаров"), KeyboardButton(text="📁 Список категорий")],
-            [KeyboardButton(text="❌ Удалить товар"), KeyboardButton(text="🗑 Удалить категорию")],
-            [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="📢 Рассылка")]
-        ],
-        resize_keyboard=True
-    )
+    def connect(self):
+        try:
+            self.conn = psycopg2.connect(DB_URL)
+            self.conn.autocommit = True
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка подключения к БД: {e}")
+            return False
     
-    await message.answer(
-        "🎮 <b>NeymaryShop Admin Bot</b>\n\n"
-        "Используйте кнопки меню для управления магазином:",
-        parse_mode="HTML",
-        reply_markup=keyboard
-    )
-
-# === КАТЕГОРИИ ===
-
-@router.message(F.text == "📂 Добавить категорию")
-async def add_category_start(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
-        return
-    await message.answer("Введите название категории:", reply_markup=ReplyKeyboardRemove())
-    await state.set_state(AddCategoryStates.waiting_for_name)
-
-@router.message(AddCategoryStates.waiting_for_name)
-async def add_category_name(message: Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    await message.answer("Введите slug (латиницей, без пробелов):")
-    await state.set_state(AddCategoryStates.waiting_for_slug)
-
-@router.message(AddCategoryStates.waiting_for_slug)
-async def add_category_slug(message: Message, state: FSMContext):
-    slug = message.text.lower().strip()
-    if not slug.replace('-', '').replace('_', '').isalnum():
-        await message.answer("❌ Только латиница, цифры и дефис:")
-        return
-    await state.update_data(slug=slug)
-    await message.answer("Описание (или /skip):")
-    await state.set_state(AddCategoryStates.waiting_for_description)
-
-@router.message(AddCategoryStates.waiting_for_description)
-async def add_category_desc(message: Message, state: FSMContext):
-    desc = None if message.text == '/skip' else message.text
-    await state.update_data(description=desc)
-    await message.answer("Отправьте картинку или /skip:")
-    await state.set_state(AddCategoryStates.waiting_for_icon)
-
-@router.message(AddCategoryStates.waiting_for_icon, F.photo)
-async def add_category_icon(message: Message, state: FSMContext):
-    try:
-        file = await bot.get_file(message.photo[-1].file_id)
-        file_data = await bot.download_file(file.file_path)
+    def get_user_role(self, telegram_id: int) -> str:
+        """Получить роль пользователя по Telegram ID"""
+        if not self.conn:
+            if not self.connect():
+                return None
         
-        upload_result = await upload_file(
-            file_data.read(),
-            f'cat_{datetime.now().timestamp()}.jpg',
-            'image/jpeg'
+        try:
+            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("""
+                    SELECT ar.role_name, ar.permissions 
+                    FROM admin_roles ar
+                    JOIN users u ON ar.user_id = u.id
+                    WHERE u.telegram_id = %s AND u.is_active = true
+                """, (telegram_id,))
+                result = cursor.fetchone()
+                return result['role_name'] if result else None
+        except Exception as e:
+            logger.error(f"Ошибка получения роли: {e}")
+            return None
+    
+    def link_telegram_to_user(self, email: str, telegram_id: int, telegram_username: str) -> bool:
+        """Привязать Telegram к существующему пользователю"""
+        if not self.conn:
+            if not self.connect():
+                return False
+        
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE users 
+                    SET telegram_id = %s, telegram_username = %s 
+                    WHERE email = %s AND is_active = true
+                """, (telegram_id, telegram_username, email))
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Ошибка привязки Telegram: {e}")
+            return False
+    
+    def create_admin_role(self, user_id: int, role_name: str, permissions: dict) -> bool:
+        """Создать админ роль для пользователя"""
+        if not self.conn:
+            if not self.connect():
+                return False
+        
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO admin_roles (user_id, role_name, permissions)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (user_id) 
+                    DO UPDATE SET role_name = %s, permissions = %s, updated_at = NOW()
+                """, (user_id, role_name, permissions, role_name, permissions))
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка создания роли: {e}")
+            return False
+    
+    def get_user_by_email(self, email: str) -> dict:
+        """Получить пользователя по email"""
+        if not self.conn:
+            if not self.connect():
+                return None
+        
+        try:
+            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("""
+                    SELECT id, email, full_name, telegram_id 
+                    FROM users 
+                    WHERE email = %s AND is_active = true
+                """, (email,))
+                return cursor.fetchone()
+        except Exception as e:
+            logger.error(f"Ошибка поиска пользователя: {e}")
+            return None
+    
+    def get_all_admins(self) -> list:
+        """Получить всех администраторов"""
+        if not self.conn:
+            if not self.connect():
+                return []
+        
+        try:
+            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("""
+                    SELECT u.id, u.email, u.full_name, u.telegram_id, u.telegram_username,
+                           ar.role_name, ar.permissions, ar.created_at
+                    FROM users u
+                    LEFT JOIN admin_roles ar ON u.id = ar.user_id
+                    WHERE u.is_active = true AND ar.role_name IS NOT NULL
+                    ORDER BY ar.created_at DESC
+                """)
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Ошибка получения админов: {e}")
+            return []
+
+# Инициализация БД
+db = BotDatabase()
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /start"""
+    user = update.effective_user
+    user_role = db.get_user_role(user.id)
+    
+    if user_role:
+        # Полное меню команд для всех ролей
+        commands_text = (
+            f"🔐 Добро пожаловать в админ панель, {user.full_name}!\n\n"
+            f"Ваша роль: {user_role}\n\n"
+            f"📋 **Управление:**\n"
+            f"/admins - Список администраторов\n"
+            f"/add_admin - Добавить администратора\n"
+            f"/link - Привязать аккаунт\n"
+            f"/add_email - Добавить админа по email\n\n"
+            f"📊 **Мониторинг:**\n"
+            f"/stats - Статистика магазина\n"
+            f"/system - Системные команды\n\n"
+            f"🛠️ **Системные:**\n"
+            f"/deploy - Запуск админ панели\n"
+            f"/install - Полная установка системы\n\n"
+            f"ℹ️ **Информация:**\n"
+            f"/start - Показать это меню\n"
         )
         
-        if upload_result:
-            await state.update_data(icon_url=upload_result['url'])
-        await save_category(message, state)
-    except Exception as e:
-        logger.error(f"Icon upload error: {e}")
-        await message.answer("❌ Ошибка загрузки")
-        await state.clear()
-
-@router.message(AddCategoryStates.waiting_for_icon, F.text == "/skip")
-async def add_category_skip_icon(message: Message, state: FSMContext):
-    await save_category(message, state)
-
-async def save_category(message: Message, state: FSMContext):
-    try:
-        data = await state.get_data()
-        async with db_pool.acquire() as conn:
-            cat_id = await conn.fetchval(
-                "INSERT INTO categories (name, slug, description, icon_url, is_active) "
-                "VALUES ($1, $2, $3, $4, true) RETURNING id",
-                data['name'], data['slug'], data.get('description'), data.get('icon_url')
+        if user_role == 'super_admin':
+            commands_text += (
+                f"\n🔑 **Super Admin команды:**\n"
+                f"Доступны все системные команды управления\n"
+                f"включая перезагрузку сервисов и установку"
             )
         
-        await message.answer(
-            f"✅ Категория #{cat_id} создана!\n"
-            f"Название: {data['name']}\n"
-            f"Slug: {data['slug']}",
-            parse_mode="HTML"
-        )
-        await state.clear()
-    except Exception as e:
-        logger.error(f"Save category error: {e}")
-        await message.answer("❌ Ошибка сохранения")
-        await state.clear()
-
-@router.message(F.text == "📁 Список категорий")
-async def list_categories(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-    try:
-        async with db_pool.acquire() as conn:
-            cats = await conn.fetch("SELECT id, name, slug, is_active FROM categories ORDER BY name")
+        await update.message.reply_text(commands_text)
+    else:
+        keyboard = [
+            [InlineKeyboardButton("🔐 Привязать аккаунт", callback_data="link_account")],
+            [InlineKeyboardButton("ℹ️ Информация", callback_data="info")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         
-        if not cats:
-            await message.answer("📂 Категорий нет")
+        await update.message.reply_text(
+            f"👋 Добро пожаловать, {user.full_name}!\n\n"
+            f"Это бот управления магазином NeymaryShop.\n\n"
+            f"У вас нет прав администратора. "
+            f"Если вы администратор, привяжите свой аккаунт.",
+            reply_markup=reply_markup
+        )
+
+async def admins_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /admins - список администраторов"""
+    user = update.effective_user
+    user_role = db.get_user_role(user.id)
+    
+    if not user_role:
+        await update.message.reply_text("❌ У вас нет прав для выполнения этой команды.")
+        return
+    
+    admins = db.get_all_admins()
+    
+    if not admins:
+        await update.message.reply_text("📋 Администраторы не найдены.")
+        return
+    
+    message = "👥 Список администраторов:\n\n"
+    
+    for admin in admins:
+        telegram_info = ""
+        if admin['telegram_id']:
+            telegram_info = f" (Telegram: @{admin['telegram_username'] or admin['telegram_id']})"
+        
+        message += f"🔸 {admin['full_name'] or 'Без имени'}\n"
+        message += f"   📧 {admin['email']}{telegram_info}\n"
+        message += f"   🏷️ Роль: {admin['role_name']}\n"
+        message += f"   📅 Добавлен: {admin['created_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
+    
+    await update.message.reply_text(message)
+
+async def add_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /add_admin - добавить администратора"""
+    user = update.effective_user
+    user_role = db.get_user_role(user.id)
+    
+    if not user_role or user_role not in ['super_admin', 'admin']:
+        await update.message.reply_text("❌ Только super_admin и admin могут добавлять администраторов.")
+        return
+    
+    keyboard = [
+        [InlineKeyboardButton("👤 По email", callback_data="add_admin_email")],
+        [InlineKeyboardButton("🔗 По Telegram ID", callback_data="add_admin_telegram")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="cancel")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        "➕ Как добавить администратора?",
+        reply_markup=reply_markup
+    )
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработка нажатий на кнопки"""
+    query = update.callback_query
+    await query.answer()
+    
+    user = update.effective_user
+    user_role = db.get_user_role(user.id)
+    
+    if query.data == "link_account":
+        await query.edit_message_text(
+            "📧 Для привязки аккаунта введите ваш email:\n\n"
+            "Используйте команду: /link ваш@email.com"
+        )
+    
+    elif query.data == "info":
+        await query.edit_message_text(
+            "ℹ️ Информация о боте:\n\n"
+            "🔐 Админ бот для управления магазином NeymaryShop\n\n"
+            "Для получения прав администратора:\n"
+            "1. У вас должен быть аккаунт в магазине\n"
+            "2. Свяжитесь с super_admin для получения роли\n\n"
+            f"👤 Ваш Telegram ID: {user.id}"
+        )
+    
+    elif query.data == "add_admin_email":
+        if not user_role or user_role not in ['super_admin', 'admin']:
+            await query.edit_message_text("❌ У вас нет прав для выполнения этой операции.")
             return
         
-        text = "📂 <b>Категории:</b>\n\n"
-        for c in cats:
-            status = "✅" if c['is_active'] else "❌"
-            text += f"{status} #{c['id']} - {c['name']} (<code>{c['slug']}</code>)\n"
-        
-        await message.answer(text, parse_mode="HTML")
-    except Exception as e:
-        logger.error(f"List categories error: {e}")
-
-# === ТОВАРЫ ===
-
-@router.message(F.text == "📦 Добавить товар")
-async def add_product_start(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
-        return
-    await message.answer("Введите название товара:", reply_markup=ReplyKeyboardRemove())
-    await state.set_state(AddProductStates.waiting_for_name)
-
-@router.message(AddProductStates.waiting_for_name)
-async def add_product_name(message: Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    
-    # Показываем доступные категории
-    async with db_pool.acquire() as conn:
-        cats = await conn.fetch("SELECT id, name, slug FROM categories WHERE is_active = true")
-    
-    cat_list = "\n".join([f"{c['id']} - {c['name']}" for c in cats])
-    await message.answer(f"Выберите категорию (ID или slug):\n\n{cat_list}")
-    await state.set_state(AddProductStates.waiting_for_category)
-
-@router.message(AddProductStates.waiting_for_category)
-async def add_product_category(message: Message, state: FSMContext):
-    cat_input = message.text.strip()
-    
-    async with db_pool.acquire() as conn:
-        if cat_input.isdigit():
-            cat = await conn.fetchrow("SELECT id FROM categories WHERE id = $1", int(cat_input))
-        else:
-            cat = await conn.fetchrow("SELECT id FROM categories WHERE slug = $1", cat_input)
-    
-    if not cat:
-        await message.answer("❌ Категория не найдена:")
-        return
-    
-    await state.update_data(category_id=cat['id'])
-    await message.answer("Себестоимость (₽):")
-    await state.set_state(AddProductStates.waiting_for_cost)
-
-@router.message(AddProductStates.waiting_for_cost)
-async def add_product_cost(message: Message, state: FSMContext):
-    try:
-        cost = float(message.text)
-        await state.update_data(cost_price=cost)
-        await message.answer("Комиссия (%):")
-        await state.set_state(AddProductStates.waiting_for_commission)
-    except ValueError:
-        await message.answer("❌ Введите число:")
-
-@router.message(AddProductStates.waiting_for_commission)
-async def add_product_commission(message: Message, state: FSMContext):
-    try:
-        commission = float(message.text)
-        await state.update_data(commission=commission)
-        await message.answer("Отправьте картинку товара или /skip:")
-        await state.set_state(AddProductStates.waiting_for_image)
-    except ValueError:
-        await message.answer("❌ Введите число:")
-
-@router.message(AddProductStates.waiting_for_image, F.photo)
-async def add_product_image(message: Message, state: FSMContext):
-    try:
-        file = await bot.get_file(message.photo[-1].file_id)
-        file_data = await bot.download_file(file.file_path)
-        
-        upload_result = await upload_file(
-            file_data.read(),
-            f'prod_{datetime.now().timestamp()}.jpg',
-            'image/jpeg'
+        await query.edit_message_text(
+            "📧 Введите email пользователя для добавления в администраторы:\n\n"
+            "Используйте команду: /add_email пользователь@example.com роль"
         )
-        
-        if upload_result:
-            await state.update_data(image_url=upload_result['url'])
-        
-        await save_product(message, state)
-    except Exception as e:
-        logger.error(f"Image upload error: {e}")
-        await message.answer("❌ Ошибка загрузки")
-        await state.clear()
-
-@router.message(AddProductStates.waiting_for_image, F.text == "/skip")
-async def add_product_skip_image(message: Message, state: FSMContext):
-    await save_product(message, state)
-
-async def save_product(message: Message, state: FSMContext):
-    try:
-        data = await state.get_data()
-        cost = data['cost_price']
-        comm = data['commission']
-        base_price = cost * (1 + comm / 100)
-        
-        async with db_pool.acquire() as conn:
-            prod_id = await conn.fetchval(
-                "INSERT INTO products (name, category_id, cost_price, commission_percent, "
-                "price_android, price_pc, price_ios, image_url, is_active) "
-                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true) RETURNING id",
-                data['name'], data['category_id'], cost, comm,
-                base_price, base_price, base_price * 1.02, data.get('image_url')
-            )
-        
-        await message.answer(
-            f"✅ Товар #{prod_id} добавлен!\n"
-            f"Название: {data['name']}\n"
-            f"Цена: {base_price:.2f} ₽"
-        )
-        await state.clear()
-    except Exception as e:
-        logger.error(f"Save product error: {e}")
-        await message.answer("❌ Ошибка")
-        await state.clear()
-
-@router.message(F.text == "📋 Список товаров")
-async def list_products(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-    try:
-        async with db_pool.acquire() as conn:
-            prods = await conn.fetch(
-                "SELECT p.id, p.name, c.name as cat, p.price_android "
-                "FROM products p LEFT JOIN categories c ON p.category_id = c.id "
-                "ORDER BY p.created_at DESC LIMIT 20"
-            )
-        
-        if not prods:
-            await message.answer("📦 Товаров нет")
+    
+    elif query.data == "add_admin_telegram":
+        if not user_role or user_role not in ['super_admin', 'admin']:
+            await query.edit_message_text("❌ У вас нет прав для выполнения этой операции.")
             return
         
-        text = "📦 <b>Товары (последние 20):</b>\n\n"
-        for p in prods:
-            text += f"#{p['id']} - {p['name']}\n   {p['cat']} • {p['price_android']:.2f} ₽\n\n"
+        await query.edit_message_text(
+            "🔗 Перешлите сообщение от пользователя, которого хотите сделать администратором,\n"
+            "или используйте команду: /add_telegram telegram_id роль"
+        )
+    
+    elif query.data == "system_start_admin":
+        if not user_role or user_role not in ['super_admin', 'admin']:
+            await query.edit_message_text("❌ У вас нет прав для выполнения этой операции.")
+            return
         
-        await message.answer(text, parse_mode="HTML")
-    except Exception as e:
-        logger.error(f"List products error: {e}")
-
-# === УДАЛЕНИЕ ===
-
-@router.message(F.text == "❌ Удалить товар")
-async def delete_product_start(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
-        return
-    await state.update_data(delete_type='product')
-    await message.answer("Введите ID товара:", reply_markup=ReplyKeyboardRemove())
-    await state.set_state(DeleteStates.waiting_for_id)
-
-@router.message(F.text == "🗑 Удалить категорию")
-async def delete_category_start(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
-        return
-    await state.update_data(delete_type='category')
-    await message.answer("Введите ID категории:", reply_markup=ReplyKeyboardRemove())
-    await state.set_state(DeleteStates.waiting_for_id)
-
-@router.message(DeleteStates.waiting_for_id)
-async def delete_entity(message: Message, state: FSMContext):
-    try:
-        entity_id = int(message.text)
-        data = await state.get_data()
-        
-        async with db_pool.acquire() as conn:
-            if data['delete_type'] == 'product':
-                await conn.execute("DELETE FROM products WHERE id = $1", entity_id)
-                await message.answer(f"✅ Товар #{entity_id} удалён")
+        await query.edit_message_text("🔄 Запуск админ панели...")
+        try:
+            result = subprocess.run(
+                ["cd", "admin", "&&", "npm", "run", "dev"],
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode == 0:
+                await query.edit_message_text(
+                    "✅ Админ панель запущена!\n\n"
+                    "🔗 Адрес: http://localhost:3003\n"
+                    "🔗 Для продакшена: https://adm.neymaryshop.ton"
+                )
             else:
-                await conn.execute("DELETE FROM categories WHERE id = $1", entity_id)
-                await message.answer(f"✅ Категория #{entity_id} удалена")
+                await query.edit_message_text(f"❌ Ошибка: {result.stderr[:200]}...")
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка: {str(e)}")
+    
+    elif query.data == "system_status":
+        if not user_role or user_role not in ['super_admin', 'admin']:
+            await query.edit_message_text("❌ У вас нет прав для выполнения этой операции.")
+            return
         
-        await state.clear()
-    except ValueError:
-        await message.answer("❌ Введите число:")
-    except Exception as e:
-        logger.error(f"Delete error: {e}")
-        await message.answer("❌ Ошибка удаления")
-        await state.clear()
-
-# === РАССЫЛКА ===
-
-@router.message(F.text == "📢 Рассылка")
-async def broadcast_start(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
-        return
-    
-    # Проверяем уровень админа
-    async with db_pool.acquire() as conn:
-        admin = await conn.fetchrow(
-            "SELECT ar.level FROM admin_users au "
-            "JOIN admin_roles ar ON au.role_id = ar.id "
-            "JOIN users u ON au.user_id = u.id "
-            "WHERE u.telegram_id = $1",
-            message.from_user.id
-        )
-    
-    if not admin or admin['level'] < 80:
-        await message.answer("⛔ Нужен уровень администратора 80+")
-        return
-    
-    await message.answer("Введите текст рассылки:", reply_markup=ReplyKeyboardRemove())
-    await state.set_state(BroadcastStates.waiting_for_message)
-
-@router.message(BroadcastStates.waiting_for_message)
-async def broadcast_send(message: Message, state: FSMContext):
-    try:
-        async with db_pool.acquire() as conn:
-            users = await conn.fetch("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
+        status_info = "📊 Статус системы:\n\n"
         
-        success_count = 0
-        for user in users:
+        # Проверка Docker контейнеров
+        try:
+            result = subprocess.run(
+                ["docker", "ps", "--format", "table {{.Names}}\t{{.Status}}"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            status_info += f"🐳 Docker контейнеры:\n{result.stdout}\n\n"
+        except:
+            status_info += "🐳 Docker: Недоступен\n\n"
+        
+        # Проверка портов
+        ports = ["3000", "3001", "3002", "3003", "5432", "6379"]
+        for port in ports:
             try:
-                await bot.send_message(user['telegram_id'], message.text)
-                success_count += 1
-                await asyncio.sleep(0.05)  # Защита от флуда
+                result = subprocess.run(
+                    ["nc", "-z", "localhost", port],
+                    capture_output=True,
+                    timeout=5
+                )
+                status = "✅" if result.returncode == 0 else "❌"
+                status_info += f"{status} Порт {port}\n"
             except:
-                pass
+                status_info += f"❌ Порт {port}\n"
         
-        await message.answer(f"✅ Рассылка завершена!\nОтправлено: {success_count} пользователям")
-        await state.clear()
-    except Exception as e:
-        logger.error(f"Broadcast error: {e}")
-        await message.answer("❌ Ошибка рассылки")
-        await state.clear()
+        await query.edit_message_text(status_info)
+    
+    elif query.data == "system_migrate":
+        if not user_role or user_role not in ['super_admin', 'admin']:
+            await query.edit_message_text("❌ У вас нет прав для выполнения этой операции.")
+            return
+        
+        await query.edit_message_text("🔄 Выполнение миграций БД...")
+        try:
+            result = subprocess.run(
+                ["docker-compose", "exec", "postgres", "psql", "-U", "neymary", "-d", "neymaryshop", "-c", "SELECT version();"],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode == 0:
+                await query.edit_message_text(
+                    "✅ Миграции выполнены успешно!\n\n"
+                    f"📊 Результат:\n{result.stdout[:200]}..."
+                )
+            else:
+                await query.edit_message_text(f"❌ Ошибка миграции: {result.stderr[:200]}...")
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка: {str(e)}")
+    
+    elif query.data == "system_restart":
+        if not user_role or user_role != 'super_admin':
+            await query.edit_message_text("❌ Только super_admin может перезагружать сервисы.")
+            return
+        
+        await query.edit_message_text("🔄 Перезагрузка сервисов...")
+        try:
+            result = subprocess.run(
+                ["docker-compose", "restart"],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            
+            if result.returncode == 0:
+                await query.edit_message_text("✅ Сервисы перезагружены успешно!")
+            else:
+                await query.edit_message_text(f"❌ Ошибка: {result.stderr[:200]}...")
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка: {str(e)}")
+    
+    elif query.data == "system_backup":
+        if not user_role or user_role not in ['super_admin', 'admin']:
+            await query.edit_message_text("❌ У вас нет прав для выполнения этой операции.")
+            return
+        
+        await query.edit_message_text("📦 Создание бэкапа...")
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_cmd = f"docker-compose exec postgres pg_dump -U neymary neymaryshop > backup_{timestamp}.sql"
+            
+            result = subprocess.run(
+                backup_cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            
+            if result.returncode == 0:
+                await query.edit_message_text(
+                    f"✅ Бэкап создан!\n\n"
+                    f"📁 Файл: backup_{timestamp}.sql\n"
+                    f"📊 Размер: {os.path.getsize(f'backup_{timestamp}.sql')} bytes"
+                )
+            else:
+                await query.edit_message_text(f"❌ Ошибка бэкапа: {result.stderr[:200]}...")
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка: {str(e)}")
+    
+    elif query.data == "system_monitor":
+        if not user_role or user_role not in ['super_admin', 'admin']:
+            await query.edit_message_text("❌ У вас нет прав для выполнения этой операции.")
+            return
+        
+        monitor_info = "🔍 Мониторинг системы:\n\n"
+        
+        # CPU и память
+        try:
+            result = subprocess.run(
+                ["free", "-h"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            monitor_info += f"💾 Память:\n{result.stdout}\n\n"
+        except:
+            monitor_info += "💾 Память: Недоступно\n\n"
+        
+        # Диск
+        try:
+            result = subprocess.run(
+                ["df", "-h", "/"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            monitor_info += f"💿 Диск:\n{result.stdout}\n\n"
+        except:
+            monitor_info += "💿 Диск: Недоступно\n\n"
+        
+        # Load average
+        try:
+            result = subprocess.run(
+                ["uptime"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            monitor_info += f"⚡ Нагрузка:\n{result.stdout}"
+        except:
+            monitor_info += "⚡ Нагрузка: Недоступно"
+        
+        await query.edit_message_text(monitor_info)
+    
+    elif query.data == "cancel":
+        await query.edit_message_text("❌ Операция отменена.")
 
-# === MAIN ===
+async def link_account_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /link - привязка аккаунта"""
+    user = update.effective_user
+    
+    if not context.args:
+        await update.message.reply_text(
+            "📧 Использование: /link ваш@email.com\n\n"
+            "Пример: /link admin@example.com"
+        )
+        return
+    
+    email = context.args[0]
+    telegram_username = user.username or f"id{user.id}"
+    
+    if db.link_telegram_to_user(email, user.id, telegram_username):
+        await update.message.reply_text(
+            f"✅ Аккаунт {email} успешно привязан к вашему Telegram!\n\n"
+            f"🔐 Теперь вы можете использовать админ команды."
+        )
+    else:
+        await update.message.reply_text(
+            f"❌ Не удалось привязать аккаунт {email}.\n\n"
+            f"Возможные причины:\n"
+            f"• Пользователь с таким email не найден\n"
+            f"• Пользователь неактивен\n"
+            f"• Аккаунт уже привязан к другому Telegram"
+        )
 
-dp.include_router(router)
+async def add_email_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /add_email - добавить админа по email"""
+    user = update.effective_user
+    user_role = db.get_user_role(user.id)
+    
+    if not user_role or user_role not in ['super_admin', 'admin']:
+        await update.message.reply_text("❌ Только super_admin и admin могут добавлять администраторов.")
+        return
+    
+    if len(context.args) < 2:
+        await update.message.reply_text(
+            "📧 Использование: /add_email пользователь@example.com роль\n\n"
+            f"Доступные роли: moderator, admin, super_admin\n"
+            f"Пример: /add_email user@example.com moderator"
+        )
+        return
+    
+    email = context.args[0]
+    role = context.args[1]
+    
+    # Проверка доступных ролей
+    available_roles = ['moderator', 'admin', 'super_admin']
+    if role not in available_roles:
+        await update.message.reply_text(
+            f"❌ Недопустимая роль. Доступные роли: {', '.join(available_roles)}"
+        )
+        return
+    
+    # Поиск пользователя
+    user_data = db.get_user_by_email(email)
+    if not user_data:
+        await update.message.reply_text(f"❌ Пользователь с email {email} не найден.")
+        return
+    
+    # Определение прав для роли
+    permissions = {
+        'moderator': {'can_manage': False, 'level': 60},
+        'admin': {'can_manage': True, 'level': 80},
+        'super_admin': {'can_manage': True, 'level': 100}
+    }
+    
+    # Создание админ роли
+    if db.create_admin_role(user_data['id'], role, permissions[role]):
+        await update.message.reply_text(
+            f"✅ Пользователь {email} назначен ролью {role}!\n\n"
+            f"👤 Имя: {user_data['full_name'] or 'Не указано'}\n"
+            f"🆔 ID: {user_data['id']}\n"
+            f"🔗 Telegram ID: {user_data['telegram_id'] or 'Не привязан'}"
+        )
+    else:
+        await update.message.reply_text(f"❌ Не удалось назначить роль {role}.")
 
-async def main():
-    await init_db()
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /stats - статистика"""
+    user = update.effective_user
+    user_role = db.get_user_role(user.id)
+    
+    if not user_role:
+        await update.message.reply_text("❌ У вас нет прав для выполнения этой команды.")
+        return
+    
+    # Получение статистики (упрощенная версия)
     try:
-        logger.info("Starting bot...")
-        await dp.start_polling(bot)
-    finally:
-        await close_db()
-        await bot.session.close()
+        if not db.conn:
+            db.connect()
+        
+        with db.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            # Общая статистика
+            cursor.execute("SELECT COUNT(*) as total_users FROM users WHERE is_active = true")
+            total_users = cursor.fetchone()['total_users']
+            
+            cursor.execute("SELECT COUNT(*) as total_admins FROM admin_roles")
+            total_admins = cursor.fetchone()['total_admins']
+            
+            cursor.execute("SELECT COUNT(*) as total_orders FROM orders")
+            total_orders = cursor.fetchone()['total_orders']
+            
+            cursor.execute("SELECT COALESCE(SUM(total_amount), 0) as total_revenue FROM orders WHERE status = 'completed'")
+            total_revenue = cursor.fetchone()['total_revenue']
+        
+        message = "📊 Статистика магазина:\n\n"
+        message += f"👥 Пользователи: {total_users}\n"
+        message += f"🔐 Администраторы: {total_admins}\n"
+        message += f"📦 Всего заказов: {total_orders}\n"
+        message += f"💰 Общая выручка: {total_revenue:.2f}₽\n\n"
+        message += f"👤 Ваша роль: {user_role}"
+        
+        await update.message.reply_text(message)
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения статистики: {e}")
+        await update.message.reply_text("❌ Не удалось загрузить статистику.")
+
+async def system_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /system - системные команды из .sh файлов"""
+    user = update.effective_user
+    user_role = db.get_user_role(user.id)
+    
+    if not user_role or user_role not in ['super_admin', 'admin']:
+        await update.message.reply_text("❌ Только super_admin и admin могут выполнять системные команды.")
+        return
+    
+    keyboard = [
+        [InlineKeyboardButton("🔐 Запуск админ панели", callback_data="system_start_admin")],
+        [InlineKeyboardButton("📊 Статус системы", callback_data="system_status")],
+        [InlineKeyboardButton("🗂️ Миграции БД", callback_data="system_migrate")],
+        [InlineKeyboardButton("🔄 Перезагрузка сервисов", callback_data="system_restart")],
+        [InlineKeyboardButton("📦 Бэкап системы", callback_data="system_backup")],
+        [InlineKeyboardButton("🔍 Мониторинг", callback_data="system_monitor")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="cancel")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        "🛠️ Системные команды NeymaryShop:\n\n"
+        "Выберите действие:",
+        reply_markup=reply_markup
+    )
+
+async def deploy_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /deploy - установка и развертывание"""
+    user = update.effective_user
+    user_role = db.get_user_role(user.id)
+    
+    if not user_role or user_role != 'super_admin':
+        await update.message.reply_text("❌ Только super_admin может выполнять установку.")
+        return
+    
+    await update.message.reply_text(
+        "🚀 Запуск установки NeymaryShop...\n\n"
+        "📍 Адрес: localhost:3003\n"
+        "🔗 Для продакшена: https://adm.neymaryshop.ton\n\n"
+        "⏳ Процесс может занять несколько минут..."
+    )
+    
+    try:
+        # Запуск admin панели
+        result = subprocess.run(
+            ["cd", "admin", "&&", "npm", "run", "dev"],
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode == 0:
+            await update.message.reply_text(
+                "✅ Админ панель успешно запущена!\n\n"
+                f"🔗 Адрес: http://localhost:3003\n"
+                f"📊 Логи:\n{result.stdout[:500]}..."
+            )
+        else:
+            await update.message.reply_text(
+                f"❌ Ошибка запуска админ панели:\n{result.stderr[:500]}..."
+            )
+            
+    except subprocess.TimeoutExpired:
+        await update.message.reply_text(
+            "⏰ Таймаут запуска, но процесс продолжается в фоновом режиме.\n"
+            "Проверьте статус через несколько минут."
+        )
+    except Exception as e:
+        logger.error(f"Ошибка запуска админ панели: {e}")
+        await update.message.reply_text(f"❌ Ошибка: {str(e)}")
+
+async def install_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /install - полная установка системы"""
+    user = update.effective_user
+    user_role = db.get_user_role(user.id)
+    
+    if not user_role or user_role != 'super_admin':
+        await update.message.reply_text("❌ Только super_admin может выполнять установку.")
+        return
+    
+    await update.message.reply_text(
+        "🔧 Запуск установки NeymaryShop для Ubuntu...\n\n"
+        "📋 Шаги установки:\n"
+        "1. 🔄 Обновление системы\n"
+        "2. 🐳 Установка Docker\n"
+        "3. 📦 Установка зависимостей\n"
+        "4. 🗂️ Создание структуры проекта\n"
+        "5. 🐘 Настройка PostgreSQL\n"
+        "6. ⚙️ Настройка окружения\n\n"
+        "⏳ Это может занять 10-15 минут..."
+    )
+    
+    # Команды из asd.sh
+    install_commands = [
+        "apt-get update -y",
+        "apt-get upgrade -y", 
+        "apt-get install -y docker docker-compose",
+        "mkdir -p /home/work/neymaryshop",
+        "cd /home/work/neymaryshop",
+        "git clone https://github.com/neymaryshop-jpg/shop .",
+        "docker-compose up -d"
+    ]
+    
+    for i, cmd in enumerate(install_commands, 1):
+        try:
+            await update.message.reply_text(f"🔄 Шаг {i}/{len(install_commands)}: {cmd}")
+            
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            
+            if result.returncode == 0:
+                await update.message.reply_text(f"✅ Шаг {i} выполнен успешно")
+            else:
+                await update.message.reply_text(
+                    f"❌ Ошибка на шаге {i}:\n{result.stderr[:200]}..."
+                )
+                return
+                
+        except subprocess.TimeoutExpired:
+            await update.message.reply_text(f"⏰ Таймаут на шаге {i}, продолжаем...")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка на шаге {i}: {str(e)}")
+            return
+    
+    await update.message.reply_text(
+        "🎉 Установка завершена!\n\n"
+        "🔗 Доступные сервисы:\n"
+        "• Фронтенд: http://localhost:3000\n"
+        "• Бэкенд: http://localhost:3002\n"
+        "• Админ панель: http://localhost:3003\n"
+        "• Telegram Bot: Работает в фоновом режиме\n\n"
+        "📊 Для проверки статуса: /system"
+    )
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик ошибок"""
+    logger.error(f"Exception while handling an update: {context.error}")
+
+def main() -> None:
+    """Основная функция"""
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    if not token:
+        logger.error("TELEGRAM_BOT_TOKEN не найден в переменных окружения!")
+        return
+    
+    # Создание приложения
+    application = Application.builder().token(token).build()
+    
+    # Обработчики команд
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("admins", admins_command))
+    application.add_handler(CommandHandler("add_admin", add_admin_command))
+    application.add_handler(CommandHandler("link", link_account_command))
+    application.add_handler(CommandHandler("add_email", add_email_command))
+    application.add_handler(CommandHandler("stats", stats_command))
+    application.add_handler(CommandHandler("system", system_command))
+    application.add_handler(CommandHandler("deploy", deploy_command))
+    application.add_handler(CommandHandler("install", install_command))
+    
+    # Обработчик кнопок
+    application.add_handler(CallbackQueryHandler(button_callback))
+    
+    # Обработчик ошибок
+    application.add_error_handler(error_handler)
+    
+    # Запуск бота
+    logger.info("🤖 Запуск Telegram бота...")
+    application.run_polling()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()

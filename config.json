@@ -1,0 +1,71 @@
+{
+	"proxy_pass": "http://127.0.0.1:80/",
+	"private_key": "Q1xla06YHZ70gha+eytZ1+ie12Dzg2DYH+t1td9Zv4w=",
+	"external_ip": "94.19.27.139",
+	"listen_ip": "0.0.0.0",
+	"network_config_url": "https://ton.org/global.config.json",
+	"custom_tunnel_network_config_url": "",
+	"port": 9565,
+	"tunnel_config": {
+		"TunnelServerKey": "oz9+S7gNIWxcNI5HFlWEzzS2DYT9OY+NTMORj72GQyg=",
+		"TunnelThreads": 2,
+		"TunnelSectionsNum": 1,
+		"NodesPoolConfigPath": "",
+		"PaymentsEnabled": false,
+		"Payments": {
+			"ADNLServerKey": "RmY16qZjZk/TnPASrY5NEIK8uoa8Suj/XyYbXWpFjFw=",
+			"PaymentsNodeKey": "ogAU0lQXxEeP73n6cClIGl8cLCkTr82o0Dq/F5omtIQ=",
+			"WalletPrivateKey": "QKFBT9F+a35aqI3OGUOla+2eEFdc18f8XafUbCpLHO0=",
+			"DBPath": "./payments-db/",
+			"SecureProofPolicy": false,
+			"ChannelsConfig": {
+				"SupportedCoins": {
+					"Ton": {
+						"Enabled": true,
+						"VirtualTunnelConfig": {
+							"ProxyMaxCapacity": "",
+							"ProxyMinFee": "0",
+							"ProxyFeePercent": 0,
+							"AllowTunneling": false
+						},
+						"MisbehaviorFine": "3",
+						"ExcessFeeTon": "0.25",
+						"Symbol": "TON",
+						"Decimals": 9,
+						"BalanceControl": {
+							"DepositWhenAmountLessThan": "1",
+							"DepositUpToAmount": "3",
+							"WithdrawWhenAmountReached": "0"
+						}
+					},
+					"Jettons": {
+						"EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs": {
+							"Enabled": false,
+							"VirtualTunnelConfig": {
+								"ProxyMaxCapacity": "0",
+								"ProxyMinFee": "0",
+								"ProxyFeePercent": 0,
+								"AllowTunneling": false
+							},
+							"MisbehaviorFine": "12",
+							"ExcessFeeTon": "0.35",
+							"Symbol": "USDT",
+							"Decimals": 6,
+							"BalanceControl": {
+								"DepositWhenAmountLessThan": "5",
+								"DepositUpToAmount": "10",
+								"WithdrawWhenAmountReached": "0"
+							}
+						}
+					},
+					"ExtraCurrencies": {}
+				},
+				"BufferTimeToCommit": 10800,
+				"QuarantineDurationSec": 21600,
+				"ConditionalCloseDurationSec": 10800,
+				"MinSafeVirtualChannelTimeoutSec": 300
+			}
+		}
+	},
+	"version": 1
+}

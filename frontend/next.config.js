@@ -22,14 +22,22 @@ const nextConfig = {
         '@react-three/drei': '@react-three/drei',
       });
     }
+    
+    // Fix API proxy in production
+    config.resolve.fallback = {
+      'http': 'https://node-http',
+      'https': 'https://node-https',
+    };
+    
     return config;
   },
 
   async rewrites() {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
     return [
       {
         source: '/api/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_URL}/:path*`,
+        destination: `${API_URL}/:path*`,
       },
     ];
   }

@@ -1,67 +1,59 @@
 'use client'
 
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect } from 'react'
+import axios from 'axios'
+import Link from 'next/link'
+import { useAuth } from '../context/AuthContext'
 
-// Типы данных
 interface Product {
-  id: number;
-  name: string;
-  category_id: number;
-  category_name: string;
-  price_android: number;
-  price_pc: number;
-  price_ios: number;
-  image_url?: string;
-  stock_quantity: number;
-  sales_count: number;
-  is_active: boolean;
+  id: number
+  name: string
+  category_id: number
+  category_name: string
+  price_android: number | string
+  price_pc: number | string
+  price_ios: number | string
+  image_url?: string
+  stock_quantity: number
+  sales_count: number
+  is_active: boolean
 }
 
 interface Category {
-  id: number;
-  name: string;
-  slug: string;
-  icon_url?: string;
-  is_active: boolean;
+  id: number
+  name: string
+  slug: string
+  icon_url?: string
+  is_active: boolean
 }
 
 interface PaymentMethod {
-  id: string;
-  name: string;
-  icon: string;
-  description: string;
-  enabled: boolean;
+  id: string
+  name: string
+  icon: string
+  description: string
+  enabled: boolean
   details: {
-    address?: string;
-    network?: string;
-    card_number?: string;
-    card_holder?: string;
-    bank_name?: string;
-  };
+    address?: string
+    network?: string
+    card_number?: string
+    card_holder?: string
+    bank_name?: string
+  }
 }
 
-interface Order {
-  id: number;
-  status: string;
-  total_amount: number;
-  payment_method: string;
-  created_at: string;
-  items?: any[];
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+
+function getPriceForPlatform(product: Product, platform: string): number {
+  const price = product[`price_${platform}` as keyof Product]
+  return typeof price === 'number' ? price : parseFloat(price as string) || 0
 }
 
-// API базовый URL
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
-
-// Компонент карточки товара
-function ProductCard({ product, platform, onClick }: {
-  product: Product;
-  platform: string;
-  onClick: () => void;
+function ProductCard({ product, price, onClick }: {
+  product: Product
+  price: number
+  onClick: () => void
 }) {
-  const price = product[`price_${platform}` as keyof Product] as number;
-
-  // Определяем иконку по категории
   const getCategoryIcon = (categoryName: string) => {
     const icons: Record<string, string> = {
       'Игры': '🎮',
@@ -70,9 +62,9 @@ function ProductCard({ product, platform, onClick }: {
       'Аккаунты': '👤',
       'ПО': '💻',
       'Стриминг': '🎵'
-    };
-    return icons[categoryName] || '📦';
-  };
+    }
+    return icons[categoryName] || '📦'
+  }
 
   return (
     <div
@@ -102,390 +94,85 @@ function ProductCard({ product, platform, onClick }: {
         </div>
       )}
     </div>
-  );
+  )
 }
 
-// Модальное окно заказа
-function OrderModal({
-  product,
-  onClose,
-  paymentMethods
-}: {
-  product: Product;
-  onClose: () => void;
-  paymentMethods: PaymentMethod[];
-}) {
-  const [stage, setStage] = useState('select-payment');
-  const [selectedPayment, setSelectedPayment] = useState<PaymentMethod | null>(null);
-  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const [orderId, setOrderId] = useState<number | null>(null);
-  const [customerEmail, setCustomerEmail] = useState('');
-  const [customerTelegram, setCustomerTelegram] = useState('');
-
-  // Создание заказа
-  const createOrder = async () => {
-    try {
-      const response = await axios.post(`${API_URL}/orders`, {
-        product_id: product.id,
-        payment_method: selectedPayment?.id,
-        customer_email: customerEmail || undefined,
-        customer_telegram: customerTelegram || undefined,
-      });
-
-      if (response.data.success) {
-        setOrderId(response.data.order_id);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error creating order:', error);
-      return false;
-    }
-  };
-
-  // Подтверждение оплаты
-  const confirmPayment = async () => {
-    setShowConfirmDialog(false);
-
-    // Создаём заказ если ещё не создан
-    if (!orderId) {
-      const created = await createOrder();
-      if (!created) {
-        alert('Ошибка при создании заказа');
-        return;
-      }
-    }
-
-    setStage('awaiting_payment');
-
-    try {
-      // Отправляем подтверждение оплаты
-      const response = await axios.post(`${API_URL}/orders/${orderId}/confirm-payment`);
-
-      if (response.data.success) {
-        setStage('admin_confirming');
-
-        // Подключаемся к WebSocket для получения обновлений
-        connectWebSocket();
-      }
-    } catch (error) {
-      console.error('Error confirming payment:', error);
-      alert('Ошибка при подтверждении оплаты');
-    }
-  };
-
-  // WebSocket для real-time обновлений
-  const connectWebSocket = () => {
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
-    const ws = new WebSocket(`${wsUrl}?order_id=${orderId}`);
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-
-      if (data.type === 'payment_confirmed') {
-        setStage('confirmed');
-        setTimeout(() => setStage('processing'), 2000);
-      } else if (data.type === 'order_processing') {
-        setStage('processing');
-      } else if (data.type === 'order_completed') {
-        setStage('completed');
-      }
-    };
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-  };
-
-  const handlePaymentSelect = (method: PaymentMethod) => {
-    if (!method.enabled) return;
-    setSelectedPayment(method);
-  };
-
-  const handlePaidClick = () => {
-    if (!customerEmail && !customerTelegram) {
-      alert('Укажите хотя бы один способ связи (Email или Telegram)');
-      return;
-    }
-    setShowConfirmDialog(true);
-  };
-
-  return (
-    <div
-      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-gray-900 rounded-2xl max-w-2xl w-full p-8 shadow-2xl border border-purple-500/30 max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex justify-between items-start mb-6">
-          <div>
-            <h2 className="text-3xl font-bold text-white mb-2">{product.name}</h2>
-            <p className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-              {product.price_android}₽
-            </p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-3xl">
-            &times;
-          </button>
-        </div>
-
-        {/* Этапы заказа */}
-        <div className="mb-8">
-          <div className="flex justify-between mb-2">
-            {['Выбор оплаты', 'Ожидание', 'Проверка', 'Завершение'].map((label, idx) => (
-              <div key={idx} className="flex flex-col items-center flex-1">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-                  ['select-payment', 'awaiting_payment', 'admin_confirming', 'confirmed', 'processing', 'completed'].indexOf(stage) >= idx
-                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
-                    : 'bg-gray-700 text-gray-400'
-                }`}>
-                  {idx + 1}
-                </div>
-                <span className="text-xs text-gray-400 mt-2 text-center">{label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Выбор способа оплаты */}
-        {stage === 'select-payment' && (
-          <div>
-            <h3 className="text-xl font-bold text-white mb-4">Контактные данные</h3>
-            <div className="space-y-3 mb-6">
-              <input
-                type="email"
-                placeholder="Email (опционально)"
-                value={customerEmail}
-                onChange={(e) => setCustomerEmail(e.target.value)}
-                className="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
-              <input
-                type="text"
-                placeholder="Telegram @username (опционально)"
-                value={customerTelegram}
-                onChange={(e) => setCustomerTelegram(e.target.value)}
-                className="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-
-            <h3 className="text-xl font-bold text-white mb-4">Выберите способ оплаты</h3>
-            <div className="space-y-3 mb-6">
-              {paymentMethods.map((method) => (
-                <button
-                  key={method.id}
-                  onClick={() => handlePaymentSelect(method)}
-                  disabled={!method.enabled}
-                  className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
-                    method.enabled
-                      ? selectedPayment?.id === method.id
-                        ? 'border-purple-500 bg-purple-900/30'
-                        : 'border-gray-700 hover:border-purple-500/50 bg-gray-800'
-                      : 'border-gray-800 bg-gray-800/50 opacity-50 cursor-not-allowed'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-3xl">{method.icon}</span>
-                      <div>
-                        <div className="font-bold text-white">{method.name}</div>
-                        <div className="text-sm text-gray-400">{method.description}</div>
-                      </div>
-                    </div>
-                    {!method.enabled && (
-                      <span className="text-sm text-yellow-400 font-semibold">
-                        Временно недоступно
-                      </span>
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            {selectedPayment && selectedPayment.enabled && (
-              <div className="bg-purple-900/20 border border-purple-500/30 rounded-xl p-6 mb-6">
-                <h4 className="font-bold text-white mb-3">Инструкция по оплате:</h4>
-                <div className="text-gray-300 space-y-2 text-sm">
-                  {selectedPayment.id === 'crypto' ? (
-                    <>
-                      <p>1️⃣ Переведите <span className="text-purple-400 font-bold">{product.price_android}₽</span> в TON на адрес:</p>
-                      <div className="bg-gray-800 p-3 rounded font-mono text-xs break-all">
-                        {selectedPayment.details.address || 'Адрес не указан'}
-                      </div>
-                      <p>2️⃣ После перевода нажмите кнопку "Я оплатил"</p>
-                      <p>3️⃣ Администратор проверит платёж в течение 5-10 минут</p>
-                    </>
-                  ) : (
-                    <>
-                      <p>1️⃣ Переведите <span className="text-pink-400 font-bold">{product.price_android}₽</span> на карту:</p>
-                      <div className="bg-gray-800 p-3 rounded font-mono text-lg">
-                        {selectedPayment.details.card_number || 'Номер не указан'}
-                      </div>
-                      <p className="text-yellow-400">
-                        💳 <b>{selectedPayment.details.bank_name}</b> - {selectedPayment.details.card_holder}
-                      </p>
-                      <p>2️⃣ После перевода нажмите кнопку "Я оплатил"</p>
-                      <p>3️⃣ Администратор проверит платёж в течение 5-10 минут</p>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <button
-              onClick={handlePaidClick}
-              disabled={!selectedPayment || !selectedPayment.enabled}
-              className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
-                selectedPayment && selectedPayment.enabled
-                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white'
-                  : 'bg-gray-700 text-gray-400 cursor-not-allowed'
-              }`}
-            >
-              Я оплатил
-            </button>
-          </div>
-        )}
-
-        {/* Подтверждение */}
-        {showConfirmDialog && (
-          <div className="absolute inset-0 bg-black/80 rounded-2xl flex items-center justify-center">
-            <div className="bg-gray-800 p-8 rounded-xl max-w-md text-center">
-              <h3 className="text-2xl font-bold text-white mb-4">Подтвердите оплату</h3>
-              <p className="text-gray-300 mb-6">
-                Вы уверены, что совершили перевод на сумму{' '}
-                <span className="text-purple-400 font-bold">{product.price_android}₽</span>?
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowConfirmDialog(false)}
-                  className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold"
-                >
-                  Отмена
-                </button>
-                <button
-                  onClick={confirmPayment}
-                  className="flex-1 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg font-semibold"
-                >
-                  Да, оплатил
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Статусы заказа */}
-        {stage === 'awaiting_payment' && (
-          <div className="text-center py-12">
-            <div className="text-6xl mb-6 animate-bounce">📤</div>
-            <h3 className="text-2xl font-bold text-white mb-3">Запрос отправлен!</h3>
-            <p className="text-gray-400">Ожидайте, администратор скоро проверит ваш платёж...</p>
-          </div>
-        )}
-
-        {(stage === 'admin_confirming' || stage === 'confirmed') && (
-          <div className="text-center py-12">
-            <div className="text-6xl mb-6">✅</div>
-            <h3 className="text-2xl font-bold text-green-400 mb-3">Платёж получен!</h3>
-            <p className="text-gray-400 mb-4">Администратор подтвердил оплату. Готовим ваш заказ...</p>
-            <div className="w-full bg-gray-700 rounded-full h-2">
-              <div className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full animate-pulse" style={{width: '33%'}}></div>
-            </div>
-          </div>
-        )}
-
-        {stage === 'processing' && (
-          <div className="text-center py-12">
-            <div className="text-6xl mb-6 animate-spin">⚙️</div>
-            <h3 className="text-2xl font-bold text-blue-400 mb-3">Заказ выполняется</h3>
-            <p className="text-gray-400 mb-4">Осталось совсем немного, мы готовим ваш товар...</p>
-            <div className="w-full bg-gray-700 rounded-full h-2">
-              <div className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full animate-pulse" style={{width: '66%'}}></div>
-            </div>
-          </div>
-        )}
-
-        {stage === 'completed' && (
-          <div className="text-center py-12">
-            <div className="text-6xl mb-6">🎉</div>
-            <h3 className="text-2xl font-bold text-purple-400 mb-3">Заказ доставлен!</h3>
-            <div className="bg-gray-800 p-6 rounded-xl mb-6">
-              <p className="text-gray-400 mb-3">Ваш код активации:</p>
-              <div className="bg-gradient-to-r from-purple-900 to-pink-900 p-4 rounded-lg font-mono text-2xl text-white">
-                XXXX-XXXX-XXXX-XXXX
-              </div>
-            </div>
-            <p className="text-sm text-gray-500 mb-6">Код также отправлен на указанные контакты</p>
-            <button
-              onClick={onClose}
-              className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-xl font-bold"
-            >
-              Отлично, спасибо!
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Главный компонент
 export default function Homepage() {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
+  const { user, logout } = useAuth()
+  const [categories, setCategories] = useState<Category[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [newArrivals, setNewArrivals] = useState<Product[]>([])
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
+  const [selectedCategory, setSelectedCategory] = useState('all')
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [userPlatform, setUserPlatform] = useState<'android' | 'pc' | 'ios'>('android')
 
-  // Загрузка данных при монтировании
   useEffect(() => {
-    loadInitialData();
-  }, []);
+    const savedPlatform = localStorage.getItem('user_platform') as 'android' | 'pc' | 'ios' | null
+    if (savedPlatform) {
+      setUserPlatform(savedPlatform)
+    } else {
+      // Auto-detect platform
+      const userAgent = navigator.userAgent.toLowerCase()
+      if (userAgent.includes('android')) {
+        setUserPlatform('android')
+      } else if (userAgent.includes('iphone') || userAgent.includes('ipad') || userAgent.includes('ipod')) {
+        setUserPlatform('ios')
+      } else {
+        setUserPlatform('pc')
+      }
+    }
+  }, [])
 
-  // Загрузка товаров при изменении категории или поиска
+  
+
   useEffect(() => {
-    loadProducts();
-  }, [selectedCategory, searchQuery]);
+    loadInitialData()
+  }, [])
+
+  useEffect(() => {
+    loadProducts()
+  }, [selectedCategory, searchQuery])
 
   const loadInitialData = async () => {
     try {
-      setLoading(true);
-
-      // Параллельная загрузка всех данных
-      const [categoriesRes, paymentMethodsRes] = await Promise.all([
+      setLoading(true)
+      const [categoriesRes, paymentMethodsRes, newArrivalsRes] = await Promise.all([
         axios.get(`${API_URL}/categories`),
-        axios.get(`${API_URL}/payment-methods`)
-      ]);
-
-      setCategories(categoriesRes.data);
-      setPaymentMethods(paymentMethodsRes.data);
+        axios.get(`${API_URL}/payment-methods`),
+        axios.get(`${API_URL}/products/new-arrivals`)
+      ])
+      setCategories(categoriesRes.data)
+      setPaymentMethods(paymentMethodsRes.data)
+      setNewArrivals(newArrivalsRes.data)
     } catch (error) {
-      console.error('Error loading initial data:', error);
+      console.error('Error loading initial data:', error)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const loadProducts = async () => {
     try {
-      const params: any = {};
+      const params: any = {}
       if (selectedCategory !== 'all') {
-        params.category = selectedCategory;
+        params.category = selectedCategory
       }
       if (searchQuery) {
-        params.search = searchQuery;
+        params.search = searchQuery
       }
-
-      const response = await axios.get(`${API_URL}/products`, { params });
-      setProducts(response.data);
+      const response = await axios.get(`${API_URL}/products`, { params })
+      setProducts(response.data)
     } catch (error) {
-      console.error('Error loading products:', error);
+      console.error('Error loading products:', error)
     }
-  };
+  }
 
-  const filteredProducts = products;
+  const handleLogout = async () => {
+    await logout()
+  }
 
   if (loading) {
     return (
@@ -495,29 +182,76 @@ export default function Homepage() {
           <p className="text-xl text-gray-400">Загрузка...</p>
         </div>
       </div>
-    );
+    )
   }
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
-      {/* Навигация */}
       <nav className="fixed top-0 left-0 right-0 bg-gray-900/95 backdrop-blur-xl z-40 border-b border-gray-800">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+          <Link href="/" className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
             NeymaryShop
-          </div>
+          </Link>
           <div className="hidden md:flex gap-8 text-sm">
+            <a href="#new-arrivals" className="hover:text-green-400 transition-colors">Новинки</a>
             <a href="#catalog" className="hover:text-purple-400 transition-colors">Каталог</a>
             <a href="#how-it-works" className="hover:text-purple-400 transition-colors">Как работает</a>
           </div>
-          <button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 px-6 py-2 rounded-lg font-semibold transition-all">
-            Войти
-          </button>
+          <div className="flex items-center gap-4">
+            {user ? (
+              <div className="flex items-center gap-4">
+                <span className="text-gray-300">{user.email}</span>
+                <button
+                  onClick={handleLogout}
+                  className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg font-semibold transition-all"
+                >
+                  Выйти
+                </button>
+              </div>
+            ) : (
+              <Link href="/login" className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 px-6 py-2 rounded-lg font-semibold transition-all">
+                Войти
+              </Link>
+            )}
+          </div>
         </div>
       </nav>
 
-      {/* Каталог */}
-      <section id="catalog" className="py-20 px-4">
+      <section id="new-arrivals" className="pt-24 pb-12 px-4 bg-gradient-to-b from-gray-900 to-gray-800/50">
+        <div className="container mx-auto max-w-7xl">
+          <h2 className="text-4xl font-bold text-center mb-4">
+            <span className="bg-gradient-to-r from-green-400 to-blue-400 bg-clip-text text-transparent">
+              🔥 Новинки
+            </span>
+          </h2>
+          <p className="text-center text-gray-400 mb-8">
+            Свежие товары за последние 30 дней
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {newArrivals.slice(0, 8).map((product) => {
+              const price = getPriceForPlatform(product, userPlatform)
+              return (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  price={price}
+                  onClick={() => setSelectedProduct(product)}
+                />
+              )
+            })}
+          </div>
+
+          {newArrivals.length === 0 && (
+            <div className="text-center py-12">
+              <div className="text-4xl mb-4">📦</div>
+              <p className="text-lg text-gray-400">Пока нет новинок</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section id="catalog" className="pt-12 pb-20 px-4">
         <div className="container mx-auto max-w-7xl">
           <h2 className="text-5xl font-bold text-center mb-4">
             <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
@@ -528,18 +262,18 @@ export default function Homepage() {
             Быстрая доставка • Гарантия возврата • Поддержка 24/7
           </p>
 
-          {/* Поиск */}
           <div className="mb-8">
             <input
               type="text"
-              placeholder="🔍 Поиск товаров..."
+              placeholder="Поиск товаров..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full max-w-2xl mx-auto block bg-gray-800 border border-gray-700 rounded-xl px-6 py-4 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-all"
             />
           </div>
 
-          {/* Категории */}
+          
+
           <div className="flex flex-wrap justify-center gap-3 mb-12">
             <button
               onClick={() => setSelectedCategory('all')}
@@ -566,19 +300,21 @@ export default function Homepage() {
             ))}
           </div>
 
-          {/* Сетка товаров */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredProducts.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                platform="android"
-                onClick={() => setSelectedProduct(product)}
-              />
-            ))}
+            {products.map((product) => {
+              const price = getPriceForPlatform(product, userPlatform)
+              return (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  price={price}
+                  onClick={() => setSelectedProduct(product)}
+                />
+              )
+            })}
           </div>
 
-          {filteredProducts.length === 0 && (
+          {products.length === 0 && (
             <div className="text-center py-20">
               <div className="text-6xl mb-4">😔</div>
               <p className="text-xl text-gray-400">Товары не найдены</p>
@@ -587,7 +323,6 @@ export default function Homepage() {
         </div>
       </section>
 
-      {/* Как это работает */}
       <section id="how-it-works" className="py-20 px-4 bg-gray-800/50">
         <div className="container mx-auto max-w-5xl">
           <h2 className="text-5xl font-bold text-center mb-16">Как это работает</h2>
@@ -611,7 +346,6 @@ export default function Homepage() {
         </div>
       </section>
 
-      {/* Footer */}
       <footer className="bg-black py-12 px-4">
         <div className="container mx-auto text-center text-gray-400">
           <div className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-4">
@@ -624,19 +358,28 @@ export default function Homepage() {
             <a href="#" className="hover:text-white">Telegram</a>
           </div>
           <div className="mt-6 text-xs text-gray-600">
-            © 2021-2026 NeymaryShop • Работает на TON Network
+            © 2021-2026 NeymaryShop
           </div>
         </div>
       </footer>
 
-      {/* Модальное окно заказа */}
       {selectedProduct && (
-        <OrderModal
-          product={selectedProduct}
-          onClose={() => setSelectedProduct(null)}
-          paymentMethods={paymentMethods}
-        />
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-900 rounded-2xl max-w-md w-full p-6">
+            <h3 className="text-xl font-bold text-white mb-2">{selectedProduct.name}</h3>
+            <p className="text-2xl font-bold text-purple-400 mb-4">
+              {getPriceForPlatform(selectedProduct, userPlatform)}₽
+            </p>
+            <p className="text-gray-400 mb-4">{selectedProduct.category_name}</p>
+            <button
+              onClick={() => setSelectedProduct(null)}
+              className="w-full bg-gray-700 hover:bg-gray-600 py-3 rounded-lg font-semibold"
+            >
+              Закрыть
+            </button>
+          </div>
+        </div>
       )}
     </div>
-  );
+  )
 }

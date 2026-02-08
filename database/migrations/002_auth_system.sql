@@ -1,66 +1,37 @@
-import express from 'express';
-import multer from 'multer';
-import path from 'path';
-import crypto from 'crypto';
-import fs from 'fs/promises';
+-- Authentication system tables
 
-const router = express.Router();
+-- Password resets table
+CREATE TABLE IF NOT EXISTS password_resets (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    token VARCHAR(255) UNIQUE NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-// Директория для загрузок
-const UPLOAD_DIR = path.join(__dirname, '../../uploads');
+-- Admin roles table
+CREATE TABLE IF NOT EXISTS admin_roles (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    role_name VARCHAR(50) NOT NULL,
+    permissions JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id)
+);
 
-// Создаём директорию если её нет
-fs.mkdir(UPLOAD_DIR, { recursive: true }).catch(console.error);
+-- Admin users table
+CREATE TABLE IF NOT EXISTS admin_users (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    role_id INTEGER REFERENCES admin_roles(id),
+    level INTEGER DEFAULT 50,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-// Настройка Multer
-const storage = multer.diskStorage({
-  destination: async (req, file, cb) => {
-    cb(null, UPLOAD_DIR);
-  },
-  filename: (req, file, cb) => {
-    const hash = crypto.randomBytes(16).toString('hex');
-    const ext = path.extname(file.originalname);
-    cb(null, `${hash}${ext}`);
-  }
-});
-
-const fileFilter = (req: any, file: any, cb: any) => {
-  const allowedTypes = /jpeg|jpg|png|gif|webp/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
-  
-  if (mimetype && extname) {
-    return cb(null, true);
-  }
-  cb(new Error('Только изображения (JPEG, PNG, GIF, WEBP)'));
-};
-
-const upload = multer({ 
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter
-});
-
-// POST /api/upload - загрузка файла
-router.post('/upload', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'Файл не загружен' });
-    }
-    
-    const fileUrl = `/uploads/${req.file.filename}`;
-    
-    res.json({
-      success: true,
-      url: fileUrl,
-      filename: req.file.filename,
-      size: req.file.size,
-      mimetype: req.file.mimetype
-    });
-  } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ error: 'Ошибка загрузки файла' });
-  }
-});
-
-export default router;
+-- Create indexes
+CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token);
+CREATE INDEX IF NOT EXISTS idx_password_resets_expires ON password_resets(expires_at);
+CREATE INDEX IF NOT EXISTS idx_admin_roles_user_id ON admin_roles(user_id);
+CREATE INDEX IF NOT EXISTS idx_admin_users_user_id ON admin_users(user_id);

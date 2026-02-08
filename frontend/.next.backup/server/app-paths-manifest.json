@@ -1,0 +1,14 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/categories/page": "app/categories/page.js",
+  "/contacts/page": "app/contacts/page.js",
+  "/page": "app/page.js",
+  "/verify-2fa/page": "app/verify-2fa/page.js",
+  "/forgot-password/page": "app/forgot-password/page.js",
+  "/cart/page": "app/cart/page.js",
+  "/login/page": "app/login/page.js",
+  "/products/page": "app/products/page.js",
+  "/catalog/page": "app/catalog/page.js",
+  "/register/page": "app/register/page.js",
+  "/reset-password/page": "app/reset-password/page.js"
+}

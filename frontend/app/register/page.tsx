@@ -2,9 +2,9 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import axios from 'axios'
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '../../context/AuthContext'
+import { hashPassword } from '../../utils/passwordHash'
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -15,6 +15,8 @@ export default function RegisterPage() {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const { register } = useAuth()
+  const router = useRouter()
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -28,18 +30,10 @@ export default function RegisterPage() {
     }
 
     try {
-      const response = await axios.post(`${API_URL}/auth/register`, {
-        email: formData.email,
-        password: formData.password,
-        full_name: formData.full_name
-      })
-
-      // Сохраняем токен
-      localStorage.setItem('auth_token', response.data.token)
-      localStorage.setItem('user_data', JSON.stringify(response.data.user))
-
-      // Перенаправляем на главную
-      window.location.href = '/'
+      const passwordHash = await hashPassword(formData.password)
+      await register(formData.email, passwordHash, formData.full_name)
+      router.push('/')
+      router.refresh()
     } catch (error: any) {
       setError(error.response?.data?.message || 'Ошибка регистрации')
     } finally {

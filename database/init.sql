@@ -10,15 +10,32 @@ CREATE TABLE users (
     telegram_id BIGINT UNIQUE,
     telegram_username VARCHAR(255),
     email VARCHAR(255) UNIQUE,
+    password_hash VARCHAR(255),
     full_name VARCHAR(255),
+    is_active BOOLEAN DEFAULT true,
+    is_verified BOOLEAN DEFAULT false,
+    two_factor_enabled BOOLEAN DEFAULT false,
+    two_factor_secret VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_login TIMESTAMP,
-    is_active BOOLEAN DEFAULT true,
     preferences JSONB DEFAULT '{}'::jsonb
 );
 
 CREATE INDEX idx_users_telegram_id ON users(telegram_id) WHERE telegram_id IS NOT NULL;
 CREATE INDEX idx_users_email ON users(email) WHERE email IS NOT NULL;
+
+-- === СЕССИИ ===
+CREATE TABLE sessions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    token VARCHAR(255) UNIQUE NOT NULL,
+    refresh_token VARCHAR(255) UNIQUE NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_sessions_token ON sessions(token);
+CREATE INDEX idx_sessions_user_id ON sessions(user_id);
 
 -- === КАТЕГОРИИ ===
 CREATE TABLE categories (

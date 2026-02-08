@@ -2,15 +2,17 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import axios from 'axios'
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '../../context/AuthContext'
+import { hashPassword } from '../../utils/passwordHash'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const { login } = useAuth()
+  const router = useRouter()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -18,17 +20,10 @@ export default function LoginPage() {
     setError('')
 
     try {
-      const response = await axios.post(`${API_URL}/auth/login`, {
-        email,
-        password
-      })
-
-      // Сохраняем токен
-      localStorage.setItem('auth_token', response.data.token)
-      localStorage.setItem('user_data', JSON.stringify(response.data.user))
-
-      // Перенаправляем на главную
-      window.location.href = '/'
+      const passwordHash = await hashPassword(password)
+      await login(email, passwordHash)
+      router.push('/')
+      router.refresh()
     } catch (error: any) {
       setError(error.response?.data?.message || 'Ошибка входа')
     } finally {

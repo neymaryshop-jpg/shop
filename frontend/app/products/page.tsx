@@ -9,7 +9,7 @@ interface Product {
   id: number
   name: string
   category_name: string
-  price_android: number
+  price_android: number | string
   stock_quantity: number
   sales_count: number
   is_active: boolean
@@ -187,8 +187,8 @@ export default function ProductsPage() {
                   {product.name}
                 </h3>
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                    {product.price_android.toFixed(2)}₽
+<span className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+                    {typeof product.price_android === 'string' ? parseFloat(product.price_android).toFixed(2) : product.price_android.toFixed(2)}₽
                   </span>
                   <span className="text-xs text-gray-400">
                     {product.stock_quantity > 0 ? `В наличии: ${product.stock_quantity}` : 'Под заказ'}

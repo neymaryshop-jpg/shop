@@ -8,11 +8,18 @@ import { createClient, RedisClientType } from 'redis';
 import { WebSocketServer, WebSocket as WSWebSocket } from 'ws';
 import * as http from 'http';
 import * as dotenv from 'dotenv';
+import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
+import uploadRouter from './routes/upload';
+import adminOrdersRouter from './routes/adminOrders';
+import { sendTelegramNotification } from './services/telegramService';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002;
+
+const server = http.createServer(app);
 
 // Database pool
 const pool = new Pool({
@@ -43,6 +50,11 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json({ limit: '1mb' }));
+app.use('/uploads', express.static('uploads'));
+
+// Routes
+app.use('/api', uploadRouter);
+app.use('/api/admin', adminOrdersRouter);
 
 // Rate limiting
 const limiter = rateLimit({
@@ -108,6 +120,38 @@ app.get('/api/products', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error fetching products:', error);
     res.status(500).json({ error: 'Ошибка при получении товаров' });
+  }
+});
+
+app.get('/api/products/new-arrivals', async (req: Request, res: Response) => {
+  try {
+    const { limit = '20' } = req.query;
+    
+    const cacheKey = `products:new-arrivals:${limit}`;
+    const cached = await redis.get(cacheKey);
+    
+    if (cached) {
+      return res.json(JSON.parse(cached));
+    }
+
+    const query = `
+      SELECT p.*, c.name as category_name 
+      FROM products p 
+      LEFT JOIN categories c ON p.category_id = c.id
+      WHERE p.is_active = true 
+        AND p.created_at >= NOW() - INTERVAL '30 days'
+      ORDER BY p.created_at DESC 
+      LIMIT $1
+    `;
+
+    const result = await pool.query(query, [parseInt(limit as string)]);
+    
+    await redis.setEx(cacheKey, 600, JSON.stringify(result.rows));
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching new arrivals:', error);
+    res.status(500).json({ error: 'Ошибка при получении новинок' });
   }
 });
 
@@ -281,6 +325,13 @@ app.post('/api/orders/:id/confirm-payment', async (req: Request, res: Response) 
 
     const order = result.rows[0];
 
+    // Отправляем уведомление в Telegram о новом платеже
+    await sendTelegramNotification({
+      type: 'new_payment',
+      order_id: order.id,
+      amount: order.total_amount
+    });
+
     broadcastToAdmins({
       type: 'new_payment',
       order_id: order.id,
@@ -335,15 +386,55 @@ app.get('/api/orders/:id', async (req: Request, res: Response) => {
 // ADMIN API
 // ==========================================
 
-const adminAuth = (req: Request, res: Response, next: NextFunction) => {
+const adminAuth = async (req: Request, res: Response, next: NextFunction) => {
   const adminToken = req.headers.authorization?.replace('Bearer ', '');
   
-  if (adminToken !== process.env.ADMIN_TOKEN) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  if (!adminToken) {
+    return res.status(401).json({ error: 'Требуется авторизация' });
   }
-  
-  next();
+
+  try {
+    const result = await pool.query(
+      `SELECT u.id, u.email, ar.role_name, ar.permissions
+       FROM users u
+       JOIN admin_sessions s ON u.id = s.user_id
+       LEFT JOIN admin_roles ar ON u.id = ar.user_id
+       WHERE s.token = $1 AND s.expires_at > NOW()`,
+      [adminToken]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Сессия истекла' });
+    }
+
+    (req as any).admin = result.rows[0];
+    next();
+  } catch (error) {
+    console.error('Admin auth error:', error);
+    res.status(500).json({ error: 'Ошибка авторизации' });
+  }
 };
+
+app.get('/api/admin/stats', adminAuth, async (req: Request, res: Response) => {
+  try {
+    const [totalOrders, pendingOrders, totalRevenue, todayOrders] = await Promise.all([
+      pool.query('SELECT COUNT(*) as count FROM orders'),
+      pool.query('SELECT COUNT(*) as count FROM orders WHERE status = \'pending\' OR status = \'awaiting_confirmation\''),
+      pool.query('SELECT COALESCE(SUM(total_amount), 0) as revenue FROM orders WHERE status = \'completed\''),
+      pool.query('SELECT COUNT(*) as count FROM orders WHERE DATE(created_at) = CURRENT_DATE')
+    ]);
+
+    res.json({
+      totalOrders: parseInt(totalOrders.rows[0].count),
+      pendingOrders: parseInt(pendingOrders.rows[0].count),
+      totalRevenue: parseFloat(totalRevenue.rows[0].revenue),
+      todayOrders: parseInt(todayOrders.rows[0].count)
+    });
+  } catch (error) {
+    console.error('Error fetching admin stats:', error);
+    res.status(500).json({ error: 'Ошибка при получении статистики' });
+  }
+});
 
 app.get('/api/admin/orders', adminAuth, async (req: Request, res: Response) => {
   try {
@@ -503,6 +594,539 @@ app.post('/api/admin/payment-methods/:id/toggle', adminAuth, async (req: Request
 });
 
 // ==========================================
+// ADMIN AUTH API
+// ==========================================
+
+app.post('/api/auth/admin/login', async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email и пароль обязательны' });
+    }
+
+    const result = await pool.query(
+      `SELECT u.*, ar.role_name, ar.permissions 
+       FROM users u 
+       LEFT JOIN admin_roles ar ON u.id = ar.user_id 
+       WHERE u.email = $1 AND u.is_active = true`,
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ message: 'Неверный email или пароль' });
+    }
+
+    const user = result.rows[0];
+    
+    if (!user.role_name) {
+      return res.status(403).json({ message: 'Доступ запрещен. У вас нет прав администратора.' });
+    }
+
+    let validPassword: boolean;
+    if (password.startsWith('$2b$')) {
+      validPassword = password === user.password_hash;
+    } else {
+      validPassword = await bcrypt.compare(password, user.password_hash);
+    }
+
+    if (!validPassword) {
+      return res.status(401).json({ message: 'Неверный email или пароль' });
+    }
+
+    await pool.query(
+      'UPDATE users SET last_login = NOW() WHERE id = $1',
+      [user.id]
+    );
+
+    const token = generateToken();
+
+    await pool.query(
+      'INSERT INTO admin_sessions (user_id, token, expires_at) VALUES ($1, $2, NOW() + INTERVAL \'7 days\')',
+      [user.id, token]
+    );
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        role: user.role_name,
+        permissions: user.permissions
+      }
+    });
+  } catch (error) {
+    console.error('Admin login error:', error);
+    res.status(500).json({ message: 'Ошибка при входе' });
+  }
+});
+
+app.post('/api/auth/admin/logout', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace('Bearer ', '');
+
+    if (token) {
+      await pool.query('DELETE FROM admin_sessions WHERE token = $1', [token]);
+    }
+
+    res.json({ message: 'Вы вышли из системы' });
+  } catch (error) {
+    console.error('Admin logout error:', error);
+    res.status(500).json({ message: 'Ошибка при выходе' });
+  }
+});
+
+app.get('/api/auth/admin/profile', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace('Bearer ', '');
+
+    if (!token) {
+      return res.status(401).json({ message: 'Требуется авторизация' });
+    }
+
+    const result = await pool.query(
+      `SELECT u.id, u.email, u.full_name, u.telegram_username, u.created_at, u.last_login,
+              ar.role_name, ar.permissions
+       FROM users u
+       JOIN admin_sessions s ON u.id = s.user_id
+       LEFT JOIN admin_roles ar ON u.id = ar.user_id
+       WHERE s.token = $1 AND s.expires_at > NOW()`,
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ message: 'Сессия истекла' });
+    }
+
+    res.json({ user: result.rows[0] });
+  } catch (error) {
+    console.error('Admin profile error:', error);
+    res.status(500).json({ message: 'Ошибка при получении профиля' });
+  }
+});
+
+// ==========================================
+// AUTH API
+// ==========================================
+
+function generateToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function generateRefreshToken(): string {
+  return crypto.randomBytes(64).toString('hex');
+}
+
+app.post('/api/auth/register', async (req: Request, res: Response) => {
+  try {
+    const { email, password, full_name } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email и пароль обязательны' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Пароль должен быть минимум 6 символов' });
+    }
+
+    const existingUser = await pool.query(
+      'SELECT id FROM users WHERE email = $1',
+      [email]
+    );
+
+    if (existingUser.rows.length > 0) {
+      return res.status(400).json({ message: 'Пользователь с таким email уже существует' });
+    }
+
+    let password_hash: string;
+    if (password.startsWith('$2b$')) {
+      // Password is already hashed (from client)
+      password_hash = password;
+    } else {
+      // Password is plain text (fallback for backwards compatibility)
+      const saltRounds = parseInt(process.env.BCRYPT_SALT_ROUNDS || '10');
+      password_hash = await bcrypt.hash(password, saltRounds);
+    }
+
+    const result = await pool.query(
+      `INSERT INTO users (email, password_hash, full_name, is_verified) 
+       VALUES ($1, $2, $3, true) 
+       RETURNING id, email, full_name, created_at`,
+      [email, password_hash, full_name || null]
+    );
+
+    const user = result.rows[0];
+    const token = generateToken();
+    const refreshToken = generateRefreshToken();
+
+    await pool.query(
+      'INSERT INTO sessions (user_id, token, refresh_token, expires_at) VALUES ($1, $2, $3, NOW() + INTERVAL \'7 days\')',
+      [user.id, token, refreshToken]
+    );
+
+    res.status(201).json({
+      user: { id: user.id, email: user.email, full_name: user.full_name },
+      token,
+      refreshToken
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ message: 'Ошибка при регистрации' });
+  }
+});
+
+app.post('/api/auth/login', async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email и пароль обязательны' });
+    }
+
+    const result = await pool.query(
+      'SELECT * FROM users WHERE email = $1 AND is_active = true',
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ message: 'Неверный email или пароль' });
+    }
+
+    const user = result.rows[0];
+    
+    // Check if password is already a hash (starts with $2b$) or plain text
+    let validPassword: boolean;
+    if (password.startsWith('$2b$')) {
+      // Password is already hashed (from client)
+      validPassword = password === user.password_hash;
+    } else {
+      // Password is plain text (fallback for backwards compatibility)
+      validPassword = await bcrypt.compare(password, user.password_hash);
+    }
+
+    if (!validPassword) {
+      return res.status(401).json({ message: 'Неверный email или пароль' });
+    }
+
+    await pool.query(
+      'UPDATE users SET last_login = NOW() WHERE id = $1',
+      [user.id]
+    );
+
+    const token = generateToken();
+    const refreshToken = generateRefreshToken();
+
+    await pool.query(
+      'INSERT INTO sessions (user_id, token, refresh_token, expires_at) VALUES ($1, $2, $3, NOW() + INTERVAL \'7 days\')',
+      [user.id, token, refreshToken]
+    );
+
+    res.json({
+      user: { id: user.id, email: user.email, full_name: user.full_name },
+      token,
+      refreshToken
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ message: 'Ошибка при входе' });
+  }
+});
+
+app.post('/api/auth/logout', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace('Bearer ', '');
+
+    if (token) {
+      await pool.query('DELETE FROM sessions WHERE token = $1', [token]);
+    }
+
+    res.json({ message: 'Вы вышли из системы' });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({ message: 'Ошибка при выходе' });
+  }
+});
+
+app.get('/api/auth/profile', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace('Bearer ', '');
+
+    if (!token) {
+      return res.status(401).json({ message: 'Требуется авторизация' });
+    }
+
+    const result = await pool.query(
+      `SELECT u.id, u.email, u.full_name, u.telegram_username, u.created_at, u.last_login, u.preferences
+       FROM users u
+       JOIN sessions s ON u.id = s.user_id
+       WHERE s.token = $1 AND s.expires_at > NOW()`,
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ message: 'Сессия истекла' });
+    }
+
+    res.json({ user: result.rows[0] });
+   } catch (error) {
+    console.error('Profile error:', error);
+    res.status(500).json({ message: 'Ошибка при получении профиля' });
+  }
+});
+
+app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: 'Email обязателен' });
+    }
+
+    const result = await pool.query(
+      'SELECT id FROM users WHERE email = $1 AND is_active = true',
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({ message: 'Если пользователь с таким email существует, письмо будет отправлено' });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 3600000);
+
+    await pool.query(
+      'INSERT INTO password_resets (user_id, token, expires_at) VALUES ($1, $2, $3)',
+      [result.rows[0].id, resetToken, expiresAt]
+    );
+
+    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+    console.log(`Password reset link for ${email}: ${resetLink}`);
+
+    res.json({ message: 'Если пользователь с таким email существует, письмо будет отправлено' });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ message: 'Ошибка при обработке запроса' });
+  }
+});
+
+app.post('/api/auth/reset-password', async (req: Request, res: Response) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ message: 'Токен и пароль обязательны' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Пароль должен быть минимум 6 символов' });
+    }
+
+    const result = await pool.query(
+      `SELECT pr.user_id FROM password_resets pr
+       WHERE pr.token = $1 AND pr.expires_at > NOW()`,
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ message: 'Недействительный или истёкший токен' });
+    }
+
+    let password_hash: string;
+    if (password.startsWith('$2b$')) {
+      // Password is already hashed (from client)
+      password_hash = password;
+    } else {
+      // Password is plain text (fallback for backwards compatibility)
+      const saltRounds = parseInt(process.env.BCRYPT_SALT_ROUNDS || '10');
+      password_hash = await bcrypt.hash(password, saltRounds);
+    }
+
+    await pool.query(
+      'UPDATE users SET password_hash = $1 WHERE id = $2',
+      [password_hash, result.rows[0].user_id]
+    );
+
+    await pool.query('DELETE FROM password_resets WHERE user_id = $1', [result.rows[0].user_id]);
+
+    res.json({ message: 'Пароль успешно изменён' });
+   } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ message: 'Ошибка при сбросе пароля' });
+  }
+});
+
+// ==========================================
+// CART API
+// ==========================================
+
+interface CartItem {
+  id: number;
+  user_id: number;
+  product_id: number;
+  quantity: number;
+  platform: string;
+  created_at: Date;
+  product_name?: string;
+  product_price?: number;
+  image_url?: string;
+}
+
+const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.replace('Bearer ', '');
+
+  if (!token) {
+    return res.status(401).json({ message: 'Требуется авторизация' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT u.id, u.email, u.full_name FROM users u
+       JOIN sessions s ON u.id = s.user_id
+       WHERE s.token = $1 AND s.expires_at > NOW()`,
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ message: 'Сессия истекла' });
+    }
+
+    (req as any).user = result.rows[0];
+    next();
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    res.status(500).json({ message: 'Ошибка авторизации' });
+  }
+};
+
+app.get('/api/cart', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+
+    const result = await pool.query(
+      `SELECT ci.*, p.name as product_name, p.image_url,
+        CASE ci.platform
+          WHEN 'android' THEN p.price_android
+          WHEN 'ios' THEN p.price_ios
+          ELSE p.price_pc
+        END as product_price
+       FROM cart_items ci
+       JOIN products p ON ci.product_id = p.id
+       WHERE ci.user_id = $1`,
+      [userId]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching cart:', error);
+    res.status(500).json({ message: 'Ошибка при получении корзины' });
+  }
+});
+
+app.post('/api/cart/add', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+    const { product_id, quantity = 1, platform = 'android' } = req.body;
+
+    if (!product_id) {
+      return res.status(400).json({ message: 'ID товара обязателен' });
+    }
+
+    const productResult = await pool.query(
+      'SELECT * FROM products WHERE id = $1 AND is_active = true',
+      [product_id]
+    );
+
+    if (productResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Товар не найден' });
+    }
+
+    const existingItem = await pool.query(
+      'SELECT * FROM cart_items WHERE user_id = $1 AND product_id = $2 AND platform = $3',
+      [userId, product_id, platform]
+    );
+
+    if (existingItem.rows.length > 0) {
+      await pool.query(
+        'UPDATE cart_items SET quantity = quantity + $1 WHERE id = $2',
+        [quantity, existingItem.rows[0].id]
+      );
+    } else {
+      await pool.query(
+        'INSERT INTO cart_items (user_id, product_id, quantity, platform) VALUES ($1, $2, $3, $4)',
+        [userId, product_id, quantity, platform]
+      );
+    }
+
+    res.json({ message: 'Товар добавлен в корзину' });
+  } catch (error) {
+    console.error('Error adding to cart:', error);
+    res.status(500).json({ message: 'Ошибка при добавлении в корзину' });
+  }
+});
+
+app.put('/api/cart/update', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+    const { item_id, quantity } = req.body;
+
+    if (!item_id || quantity < 1) {
+      return res.status(400).json({ message: 'Некорректные данные' });
+    }
+
+    await pool.query(
+      'UPDATE cart_items SET quantity = $1 WHERE id = $2 AND user_id = $3',
+      [quantity, item_id, userId]
+    );
+
+    res.json({ message: 'Корзина обновлена' });
+  } catch (error) {
+    console.error('Error updating cart:', error);
+    res.status(500).json({ message: 'Ошибка при обновлении корзины' });
+  }
+});
+
+app.delete('/api/cart/remove', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+    const { item_id } = req.body;
+
+    if (!item_id) {
+      return res.status(400).json({ message: 'ID элемента обязателен' });
+    }
+
+    await pool.query(
+      'DELETE FROM cart_items WHERE id = $1 AND user_id = $2',
+      [item_id, userId]
+    );
+
+    res.json({ message: 'Товар удалён из корзины' });
+  } catch (error) {
+    console.error('Error removing from cart:', error);
+    res.status(500).json({ message: 'Ошибка при удалении из корзины' });
+  }
+});
+
+app.delete('/api/cart/clear', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+
+    await pool.query('DELETE FROM cart_items WHERE user_id = $1', [userId]);
+
+    res.json({ message: 'Корзина очищена' });
+  } catch (error) {
+    console.error('Error clearing cart:', error);
+    res.status(500).json({ message: 'Ошибка при очистке корзины' });
+  }
+});
+
+// ==========================================
 // WEBSOCKET
 // ==========================================
 
@@ -532,8 +1156,6 @@ async function startServer() {
   try {
     await initRedis();
     
-    const server = http.createServer(app);
-    
     const wss = new WebSocketServer({ noServer: true });
     
     wss.on('connection', (ws: WSWebSocket, request: http.IncomingMessage) => {
@@ -562,11 +1184,12 @@ async function startServer() {
       });
     });
 
-    server.listen(PORT, () => {
+    server.listen(PORT, '0.0.0.0', () => {
       console.log(`✅ Backend running on port ${PORT}`);
       console.log(`📊 Database: connected`);
       console.log(`🔴 Redis: connected`);
       console.log(`🔌 WebSocket: ready`);
+      console.log(`🌐 Available on: http://0.0.0.0:${PORT}`);
     });
 
     process.on('SIGTERM', async () => {
