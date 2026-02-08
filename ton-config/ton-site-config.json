@@ -1,0 +1,24 @@
+{
+  "control": {
+    "enabled": true,
+    "address": "127.0.0.1:5555",
+    "server_key": "7406548293a117469087613381a703e02cf96ac84a8b8dbd7dffc9cb5c14ddcd"
+  },
+  "sites": [
+    {
+      "domains": ["neymaryshop.ton"],
+      "backend": {
+        "type": "http",
+        "address": "127.0.0.1:3000"
+      }
+    }
+  ],
+  "dht": {
+    "a": 3,
+    "k": 3,
+    "timeout_ms": 1000
+  },
+  "adnl": {
+    "address": "v2amvecsoqroruqq5qthanhapqcz6lkzbfixdn5px74ts24cto43dtv"
+  }
+}
