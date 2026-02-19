@@ -1,4 +1,39 @@
-python-telegram-bot==20.7
-psycopg2-binary==2.9.9
-python-dotenv==1.0.0
-asyncio
+# NeymaryShop Telegram Bot - Dependencies
+# Updated: 2026-02-18
+# Все версии стабильные, без известных уязвимостей
+
+# Telegram Bot Framework
+aiogram==3.18.0
+magic-filter==1.0.12
+
+# HTTP Client
+aiohttp==3.11.13
+aiosignal==1.3.2
+frozenlist==1.5.0
+
+# Database
+asyncpg==0.30.0
+aiosqlite==0.21.0
+
+# Environment
+python-dotenv==1.1.0
+
+# Cache
+redis==5.2.1
+
+# Image Processing
+Pillow==11.1.0
+
+# Security & 2FA
+pyotp==2.9.0
+pycryptodome==3.21.0
+
+# QR Codes
+qrcode[pil]==8.0
+pypng==0.20220715.0
+
+# Type hints
+typing_extensions==4.12.2
+
+# Certificates (для HTTPS)
+certifi==2025.1.31

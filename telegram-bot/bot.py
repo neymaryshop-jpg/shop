@@ -140,6 +140,39 @@ class BotDatabase:
 # Инициализация БД
 db = BotDatabase()
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /help - краткая справка"""
+    user = update.effective_user
+    
+    help_text = (
+        f"🚀 **NeymaryShop Bot - Быстрая справка**\n\n"
+        f"👋 Привет, {user.first_name}!\n\n"
+        
+        f"🔐 **Для начала работы:**\n"
+        f"/link email - Привязать ваш аккаунт\n"
+        f"Пример: /link admin@example.com\n\n"
+        
+        f"📊 **Основные команды:**\n"
+        f"/start - Полное меню\n"
+        f"/help - Эта справка\n"
+        f"/stats - Статистика магазина\n"
+        f"/admins - Список администраторов\n\n"
+        
+        f"⚙️ **Для админов:**\n"
+        f"/add_admin - Добавить администратора\n"
+        f"/add_email email роль - Добавить по email\n"
+        f"/system - Системные команды\n\n"
+        
+        f"🛠️ **Для super_admin:**\n"
+        f"/deploy - Запустить админ панель\n"
+        f"/install - Установка системы\n\n"
+        
+        f"💡 **Подсказка:** Начните с привязки аккаунта!\n"
+        f"Используйте: /link ваш@email"
+    )
+    
+    await update.message.reply_text(help_text, parse_mode='Markdown')
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /start"""
     user = update.effective_user
@@ -149,20 +182,36 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         # Полное меню команд для всех ролей
         commands_text = (
             f"🔐 Добро пожаловать в админ панель, {user.full_name}!\n\n"
-            f"Ваша роль: {user_role}\n\n"
-            f"📋 **Управление:**\n"
-            f"/admins - Список администраторов\n"
-            f"/add_admin - Добавить администратора\n"
-            f"/link - Привязать аккаунт\n"
-            f"/add_email - Добавить админа по email\n\n"
-            f"📊 **Мониторинг:**\n"
-            f"/stats - Статистика магазина\n"
-            f"/system - Системные команды\n\n"
-            f"🛠️ **Системные:**\n"
-            f"/deploy - Запуск админ панели\n"
-            f"/install - Полная установка системы\n\n"
-            f"ℹ️ **Информация:**\n"
+            f"📋 **Управление администраторами:**\n"
+            f"/admins - Показать всех администраторов\n"
+            f"         Пример: /admins\n"
+            f"/add_admin - Меню добавления администратора\n"
+            f"           Пример: /add_admin\n"
+            f"/add_email - Добавить админа по email\n"
+            f"           Пример: /add_email user@site.com admin\n"
+            f"/link - Привязать Telegram к аккаунту\n"
+            f"       Пример: /link your@email.com\n\n"
+            
+            f"📊 **Мониторинг и статистика:**\n"
+            f"/stats - Показать статистику магазина\n"
+            f"        Пример: /stats\n"
+            f"/system - Меню системных команд\n"
+            f"         Пример: /system\n\n"
+            
+            f"🛠️ **Системное управление:**\n"
+            f"/deploy - Запустить админ панель\n"
+            f"         Пример: /deploy\n"
+            f"/install - Полная установка системы\n"
+            f"          Пример: /install (только super_admin)\n\n"
+            
+            f"ℹ️ **Помощь:**\n"
             f"/start - Показать это меню\n"
+            f"/help - Показать краткую справку\n\n"
+            
+            f"💡 **Быстрые советы:**\n"
+            f"• Начните с привязки аккаунта: /link email\n"
+            f"• Проверьте системный статус: /system\n"
+            f"• Посмотрите статистику: /stats\n"
         )
         
         if user_role == 'super_admin':
@@ -180,13 +229,25 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
-            f"👋 Добро пожаловать, {user.full_name}!\n\n"
-            f"Это бот управления магазином NeymaryShop.\n\n"
-            f"У вас нет прав администратора. "
-            f"Если вы администратор, привяжите свой аккаунт.",
-            reply_markup=reply_markup
+        user_name = user.full_name or user.first_name or "Пользователь"
+        
+        welcome_text = (
+            f"👋 **Добро пожаловать в NeymaryShop!**\n\n"
+            f"🤖 Это бот управления магазином\n\n"
+            f"🔐 **У вас нет прав администратора**\n\n"
+            f"📋 **Что делать дальше:**\n"
+            f"1. Если вы администратор - привяжите аккаунт:\n"
+            f"   `/link ваш@email.com`\n\n"
+            f"2. Если у вас есть аккаунт в магазине:\n"
+            f"   • Зарегистрируйтесь на сайте\n"
+            f"   • Свяжитесь с super_admin для получения прав\n\n"
+            f"📞 **Нужна помощь?**\n"
+            f"   Свяжитесь: @neymaryshop\n\n"
+            f"💡 **Быстрый старт:**\n"
+            f"   Нажмите кнопку ниже для привязки аккаунта"
         )
+        
+        await update.message.reply_text(welcome_text, reply_markup=reply_markup)
 
 async def admins_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /admins - список администраторов"""
@@ -247,10 +308,24 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user_role = db.get_user_role(user.id)
     
     if query.data == "link_account":
-        await query.edit_message_text(
-            "📧 Для привязки аккаунта введите ваш email:\n\n"
-            "Используйте команду: /link ваш@email.com"
+        help_text = (
+            "📧 **Привязка Telegram аккаунта**\n\n"
+            "🔹 **Что нужно сделать:**\n"
+            "Отправьте команду с вашим email из магазина\n\n"
+            "📋 **Формат команды:**\n"
+            "`/link ваш@email.com`\n\n"
+            "💡 **Примеры:**\n"
+            "• `/link admin@example.com`\n"
+            "• `/link user@shop.com`\n\n"
+            "⚠️ **Важно:**\n"
+            "• Email должен быть зарегистрирован в магазине\n"
+            "• Аккаунт должен быть активен\n"
+            "• Один Telegram = один аккаунт\n\n"
+            "🚀 **Готовы?**\n"
+            "Скопируйте и отправьте команду выше!"
         )
+        
+        await query.edit_message_text(help_text, parse_mode='Markdown')
     
     elif query.data == "info":
         await query.edit_message_text(
@@ -471,8 +546,16 @@ async def link_account_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
     if not context.args:
         await update.message.reply_text(
-            "📧 Использование: /link ваш@email.com\n\n"
-            "Пример: /link admin@example.com"
+            "📧 **Привязка аккаунта к Telegram**\n\n"
+            "🔹 **Формат:** `/link ваш@email.com`\n\n"
+            "📋 **Примеры:**\n"
+            "• `/link admin@example.com`\n"
+            "• `/link user@company.com`\n\n"
+            "💡 **Важно:**\n"
+            "• Email должен существовать в системе\n"
+            "• Пользователь должен быть активен\n"
+            "• Один Telegram можно привязать только к одному аккаунту\n\n"
+            "🔗 После привязки вы получите доступ к админ функциям!"
         )
         return
     
@@ -504,9 +587,17 @@ async def add_email_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     if len(context.args) < 2:
         await update.message.reply_text(
-            "📧 Использование: /add_email пользователь@example.com роль\n\n"
-            f"Доступные роли: moderator, admin, super_admin\n"
-            f"Пример: /add_email user@example.com moderator"
+            "👤 **Добавление администратора по email**\n\n"
+            "🔹 **Формат:** `/add_email email роль`\n\n"
+            "📋 **Доступные роли:**\n"
+            "• `moderator` - Модератор (базовые права)\n"
+            "• `admin` - Администратор (полные права)\n"
+            "• `super_admin` - Супер админ (все права)\n\n"
+            "💡 **Примеры:**\n"
+            "• `/add_email new@site.com moderator`\n"
+            "• `/add_email boss@company.com admin`\n"
+            "• `/add_email root@system.com super_admin`\n\n"
+            "⚠️ **Важно:** Пользователь с указанным email должен существовать в системе!"
         )
         return
     
@@ -730,6 +821,23 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     """Обработчик ошибок"""
     logger.error(f"Exception while handling an update: {context.error}")
 
+async def set_bot_commands(application: Application) -> None:
+    """Установить команды для подсказок Telegram"""
+    commands = [
+        ("start", "🚀 Запустить бота и показать меню"),
+        ("help", "📋 Показать краткую справку"),
+        ("link", "🔗 Привязать Telegram к аккаунту\nПример: /link email@example.com"),
+        ("admins", "👥 Список администраторов"),
+        ("add_admin", "➕ Меню добавления администратора"),
+        ("add_email", "📧 Добавить админа по email\nПример: /add_email email@site.com role"),
+        ("stats", "📊 Статистика магазина"),
+        ("system", "⚙️ Системные команды и управление"),
+        ("deploy", "🚀 Запустить админ панель"),
+        ("install", "🔧 Полная установка системы")
+    ]
+    
+    await application.bot.set_my_commands(commands)
+
 def main() -> None:
     """Основная функция"""
     token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -742,6 +850,7 @@ def main() -> None:
     
     # Обработчики команд
     application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("admins", admins_command))
     application.add_handler(CommandHandler("add_admin", add_admin_command))
     application.add_handler(CommandHandler("link", link_account_command))
@@ -759,6 +868,8 @@ def main() -> None:
     
     # Запуск бота
     logger.info("🤖 Запуск Telegram бота...")
+    
+    # Запускаем без set_bot_commands чтобы избежать ошибки с event loop
     application.run_polling()
 
 if __name__ == '__main__':

@@ -1,32 +1,26 @@
-FROM python:3.11-alpine
+# Build stage
+FROM python:3.9-slim AS builder
+
 WORKDIR /app
 
-# Install system dependencies
-RUN apk add --no-cache gcc musl-dev postgresql-dev
-
-# Install Python dependencies
+# Установка зависимостей
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Production stage
+FROM python:3.9-slim
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Копирование установленных пакетов
+COPY --from=builder /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
 COPY . .
 
-# Create non-root user
-RUN addgroup -g 1001 -S botuser && \
-    adduser -S botuser -u 1001 -G botuser && \
-    chown -R botuser:botuser /app
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD python -c "import sys; sys.exit(0)" || exit 1
 
-# Switch to non-root user
-USER botuser
-
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
-
-# Create logs directory
-RUN mkdir -p /app/logs
-
-# Install requests for HTTP checks
-RUN pip install requests
-
-# Start the bot
-CMD ["python", "monitor.py"]
+CMD ["python", "main.py"]

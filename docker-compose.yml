@@ -1,173 +1,157 @@
 services:
-  # ========== TON ИНТЕГРАЦИЯ ==========
-  ton-proxy:
-    image: node:18-alpine
-    container_name: neymaryshop_ton_proxy
+  # Redis - кэширование и сессии
+  redis:
+    image: redis:7-alpine
+    container_name: neymaryshop_redis
     restart: unless-stopped
-    environment:
-      - TON_NETWORK=${TON_NETWORK:-testnet}
-      - TON_API_KEY=${TON_API_KEY:-demo_key}
+    command: redis-server --appendonly yes
     ports:
-      - "8081:8081"
+      - "6379:6379"
     volumes:
-      - ./ton-config:/config
-    command: >
-      sh -c "
-      echo 'Starting TON proxy...' &&
-      echo 'TON Network: ${TON_NETWORK:-testnet}' &&
-      mkdir -p /app &&
-      while true; do
-        echo 'TON Proxy running on port 8081...';
-        sleep 60;
-      done
-      "
+      - redis_data:/data
     healthcheck:
-      test: ["CMD", "sh", "-c", "exit 0"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - neymaryshop
 
+  # PostgreSQL - основная база данных
   postgres:
     image: postgres:15-alpine
     container_name: neymaryshop_db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-neymaryshop}
-      POSTGRES_USER: ${POSTGRES_USER:-neymary}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: neymaryshop
+      POSTGRES_USER: neymary
+      POSTGRES_PASSWORD: neymary123
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
       - ./database/migrations:/docker-entrypoint-initdb.d/migrations
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-neymary}"]
+      test: ["CMD-SHELL", "pg_isready -U neymary"]
       interval: 10s
       timeout: 5s
       retries: 5
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - neymaryshop
 
-  redis:
-    image: redis:7-alpine
-    container_name: neymaryshop_redis
-    restart: unless-stopped
-    environment:
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-    command: >
-      redis-server
-      --requirepass ${REDIS_PASSWORD}
-      --maxmemory 512mb
-      --maxmemory-policy allkeys-lru
-      --save 900 1
-      --appendonly yes
-    volumes:
-      - redis_data:/data
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
+  # Backend - API сервер (Node.js + Express)
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-      args:
-        NODE_ENV: production
     container_name: neymaryshop_backend
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      PORT: ${BACKEND_PORT:-3002}
-      
-      # Database
-      DATABASE_URL: postgresql://${POSTGRES_USER:-neymary}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-neymaryshop}
-      
-      # Redis (✅ ИСПРАВЛЕНО)
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
-      
-      # JWT & Security
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
-      ADMIN_TOKEN: ${ADMIN_TOKEN}
-      
-      # TON Integration (✅ ДОБАВЛЕНО)
-      TON_NETWORK: ${TON_NETWORK:-mainnet}
-      TON_API_URL: http://ton-proxy:8081
-      TON_WALLET_ADDRESS: ${TON_WALLET_ADDRESS}
-      TON_WALLET_MNEMONIC: ${TON_WALLET_MNEMONIC}
-      TON_API_KEY: ${TON_API_KEY}
-      
-      # Telegram
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      
-      # Frontend URL
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-      
+      PORT: 3002
+      DATABASE_URL: postgresql://neymary:neymary123@postgres:5432/neymaryshop
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-secret123}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-refreshsecret123}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3002/api}
+      FRONTEND_URL: http://localhost:3000
+      ADMIN_URL: http://localhost:3003
     ports:
-      - "${BACKEND_PORT:-3002}:3002"
+      - "3002:3002"
+    volumes:
+      - ./backend/uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      ton-proxy:
-        condition: service_healthy
-    volumes:
-      - ./backend/logs:/app/logs
-      - ./backend/uploads:/app/uploads
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3002/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3002/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: '1.0'
+    networks:
+      - neymaryshop
 
+  # Frontend - основной сайт (Next.js)
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-        NEXT_PUBLIC_TON_NETWORK: ${TON_NETWORK:-mainnet}
     container_name: neymaryshop_frontend
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3002/api}
     ports:
       - "3000:3000"
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
+    networks:
+      - neymaryshop
 
-  telegram_bot:
+  # Admin - панель администратора (Next.js)
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    container_name: neymaryshop_admin
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3003
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3002/api}
+    ports:
+      - "3003:3003"
+    depends_on:
+      - backend
+    command: ["node", "server.js"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3003"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - neymaryshop
+
+  # Telegram Bot - бот для уведомлений и продаж
+  telegram-bot:
     build:
       context: ./telegram-bot
       dockerfile: Dockerfile
-    container_name: neymaryshop_bot
+    container_name: neymaryshop_telegram_bot
     restart: unless-stopped
-    env_file:
-      - ./telegram-bot/.env
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME}
+      DATABASE_URL: postgresql://neymary:neymary123@postgres:5432/neymaryshop
+      REDIS_URL: redis://redis:6379
+      BACKEND_URL: http://backend:3002
+      ADMIN_IDS: ${ADMIN_IDS:-1661627681}
+      TON_NETWORK: ${TON_NETWORK:-testnet}
+      TON_WALLET_ADDRESS: ${TON_WALLET_ADDRESS}
+      TON_WALLET_MNEMONIC: ${TON_WALLET_MNEMONIC}
     depends_on:
+      - backend
       - postgres
       - redis
-      - backend
-      - ton-proxy
-    volumes:
-      - ./telegram-bot/logs:/app/logs
+    networks:
+      - neymaryshop
 
+  # Nginx - reverse proxy (опционально, для production)
   nginx:
     image: nginx:alpine
     container_name: neymaryshop_nginx
@@ -178,13 +162,21 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
-      - nginx_cache:/var/cache/nginx
-      - ./logs/nginx:/var/log/nginx
     depends_on:
       - frontend
       - backend
+      - admin
+    networks:
+      - neymaryshop
+    profiles:
+      - production
 
 volumes:
   postgres_data:
+    driver: local
   redis_data:
-  nginx_cache:
+    driver: local
+
+networks:
+  neymaryshop:
+    driver: bridge
