@@ -1,21 +1,35 @@
 """
 NeymaryShop - Telegram Бот (Донат в игры)
 3 этапа: Оплата → Почта → Код
+Логирование всех действий в файл и консоль
 """
 import asyncio
 import logging
 import os
+import sys
+from datetime import datetime
 from dotenv import load_dotenv
 
 # Загрузка переменных окружения
 load_dotenv()
 
-# Настройка логирования
+# Создаём директорию для логов
+os.makedirs('logs', exist_ok=True)
+
+# Настройка логирования в файл и консоль
+log_filename = f"logs/bot_{datetime.now().strftime('%Y-%m-%d')}.log"
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_filename, encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
+
 logger = logging.getLogger(__name__)
+logger.info(f"📝 Логирование включено. Файл: {log_filename}")
 
 # Импорт компонентов бота
 from bot import dp, bot

@@ -1,5 +1,6 @@
 """
 Хэндлеры для бота - NeymaryShop (Донат в игры)
+Логирование всех действий пользователей
 """
 import logging
 import re
@@ -23,6 +24,11 @@ from bot.config import settings
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+# Логирование нажатий кнопок
+def log_button_press(user_id: int, username: str, button: str, action: str = "callback"):
+    """Логирование нажатия кнопки"""
+    logger.info(f"🔘 [{action}] User:{user_id} (@{username}) Button:{button}")
 
 # Хранилище навигации: user_id -> список предыдущих состояний
 user_navigation = {}

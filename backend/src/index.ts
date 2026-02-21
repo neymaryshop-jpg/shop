@@ -12,12 +12,14 @@ import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import uploadRouter from './routes/upload';
 import adminOrdersRouter from './routes/adminOrders';
+import featuresRouter from './routes/features';
 import { sendTelegramNotification } from './services/telegramService';
+import { requestLogger, errorLogger, userActionLogger, authLogger } from './middleware/logger';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3002;
+const PORT = parseInt(process.env.PORT || '3002');
 
 const server = http.createServer(app);
 
@@ -46,15 +48,22 @@ async function initRedis() {
 app.use(helmet());
 app.use(compression());
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: [
+    process.env.FRONTEND_URL || 'http://localhost:3000',
+    process.env.ADMIN_URL || 'http://localhost:3003'
+  ],
   credentials: true
 }));
 app.use(express.json({ limit: '1mb' }));
 app.use('/uploads', express.static('uploads'));
 
+// Логирование запросов
+app.use(requestLogger);
+
 // Routes
 app.use('/api', uploadRouter);
 app.use('/api/admin', adminOrdersRouter);
+app.use('/api', featuresRouter);
 
 // Rate limiting
 const limiter = rateLimit({
@@ -63,6 +72,32 @@ const limiter = rateLimit({
   message: { error: 'Слишком много запросов, попробуйте позже' }
 });
 app.use('/api', limiter);
+
+// Root endpoint
+app.get('/', (req: Request, res: Response) => {
+  res.json({
+    message: 'NeymaryShop Backend API',
+    status: 'running',
+    version: '2.2.0',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    endpoints: {
+      health: '/health',
+      api: '/api',
+      auth: '/api/auth',
+      products: '/api/products',
+      orders: '/api/orders',
+      wishlist: '/api/wishlist',
+      reviews: '/api/products/:id/reviews',
+      notifications: '/api/notifications',
+      compare: '/api/compare',
+      referral: '/api/referral',
+      coupons: '/api/coupons',
+      newsletter: '/api/newsletter',
+      support: '/api/support'
+    }
+  });
+});
 
 // Health check
 app.get('/health', (req: Request, res: Response) => {
@@ -472,21 +507,22 @@ app.get('/api/admin/orders', adminAuth, async (req: Request, res: Response) => {
 
 app.post('/api/admin/orders/:id/confirm-received', adminAuth, async (req: Request, res: Response) => {
   const client = await pool.connect();
-  
+
   try {
     const { id } = req.params;
+    const orderId = Array.isArray(id) ? id[0] : id;
 
     await client.query('BEGIN');
 
     const result = await client.query(`
-      UPDATE orders 
-      SET 
+      UPDATE orders
+      SET
         status = 'confirmed',
         payment_status = 'received',
         updated_at = NOW()
       WHERE id = $1 AND status = 'awaiting_confirmation'
       RETURNING *
-    `, [id]);
+    `, [orderId]);
 
     if (result.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -495,43 +531,43 @@ app.post('/api/admin/orders/:id/confirm-received', adminAuth, async (req: Reques
 
     const order = result.rows[0];
 
-    broadcastToClient(order.id.toString(), {
+    broadcastToClient(orderId, {
       type: 'payment_confirmed',
-      order_id: order.id
+      order_id: orderId
     });
 
     setTimeout(async () => {
       try {
         await pool.query(`
-          UPDATE orders 
+          UPDATE orders
           SET status = 'processing', updated_at = NOW()
           WHERE id = $1
-        `, [id]);
+        `, [orderId]);
 
-        broadcastToClient(id, {
+        broadcastToClient(orderId, {
           type: 'order_processing',
-          order_id: id
+          order_id: orderId
         });
 
         setTimeout(async () => {
           try {
             await pool.query(`
-              UPDATE orders 
+              UPDATE orders
               SET status = 'completed', completed_at = NOW(), updated_at = NOW()
               WHERE id = $1
-            `, [id]);
+            `, [orderId]);
 
             await pool.query(`
-              UPDATE order_items 
-              SET 
+              UPDATE order_items
+              SET
                 delivery_data = jsonb_build_object('code', 'XXXX-XXXX-XXXX-XXXX'),
                 delivered_at = NOW()
               WHERE order_id = $1
-            `, [id]);
+            `, [orderId]);
 
-            broadcastToClient(id, {
+            broadcastToClient(orderId, {
               type: 'order_completed',
-              order_id: id,
+              order_id: orderId,
               code: 'XXXX-XXXX-XXXX-XXXX'
             });
           } catch (err) {
@@ -1183,6 +1219,9 @@ async function startServer() {
         wss.emit('connection', ws, request);
       });
     });
+
+    // Глобальный обработчик ошибок
+    app.use(errorLogger);
 
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`✅ Backend running on port ${PORT}`);

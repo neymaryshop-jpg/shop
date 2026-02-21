@@ -64,6 +64,7 @@ services:
       - "3002:3002"
     volumes:
       - ./backend/uploads:/app/uploads
+      - ./logs/backend:/app/logs
     depends_on:
       postgres:
         condition: service_healthy
@@ -148,6 +149,8 @@ services:
       - backend
       - postgres
       - redis
+    volumes:
+      - ./logs/telegram-bot:/app/logs
     networks:
       - neymaryshop
 
