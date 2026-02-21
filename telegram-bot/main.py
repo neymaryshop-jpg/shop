@@ -1,7 +1,7 @@
 """
 NeymaryShop - Telegram Бот (Донат в игры)
 3 этапа: Оплата → Почта → Код
-Логирование всех действий в файл и консоль
+Логирование всех действий в stdout для Docker
 """
 import asyncio
 import logging
@@ -13,41 +13,38 @@ from dotenv import load_dotenv
 # Загрузка переменных окружения
 load_dotenv()
 
-# Создаём директорию для логов
-os.makedirs('logs', exist_ok=True)
-
-# Настройка логирования в файл и консоль
-log_filename = f"logs/bot_{datetime.now().strftime('%Y-%m-%d')}.log"
-
+# Настройка логирования ТОЛЬКО в stdout для Docker
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_filename, encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
-    ]
+    stream=sys.stdout,
+    force=True
 )
 
 logger = logging.getLogger(__name__)
-logger.info(f"📝 Логирование включено. Файл: {log_filename}")
+logger.info("📝 Логирование включено (Docker stdout mode)")
 
 # Импорт компонентов бота
 from bot import dp, bot
 from bot.services.database import db
 from bot.services.redis_cache import redis
 
-# Логирование регистрации
-logger.info(f"📦 Registering routers...")
-
 # Импорт и регистрация хэндлеров
 from bot.handlers.start import router as start_router
 from bot.handlers.profile import router as profile_router
+from bot.handlers.payment import router as payment_router
+from bot.handlers.admin_products import router as admin_products_router
 
+logger.info(f"📦 Registering routers...")
 logger.info(f"  - start_router: {start_router}")
 logger.info(f"  - profile_router: {profile_router}")
+logger.info(f"  - payment_router: {payment_router}")
+logger.info(f"  - admin_products_router: {admin_products_router}")
 
 dp.include_router(start_router)
 dp.include_router(profile_router)
+dp.include_router(payment_router)
+dp.include_router(admin_products_router)
 
 logger.info(f"✅ Routers registered!")
 

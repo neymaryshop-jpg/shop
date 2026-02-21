@@ -61,11 +61,25 @@ class Database:
                 price_android DECIMAL(10, 2) DEFAULT 0,
                 price_ios DECIMAL(10, 2) DEFAULT 0,
                 image_url TEXT,
+                delivery_type TEXT DEFAULT 'auto', -- 'auto' (код) или 'manual' (вход в аккаунт)
                 is_active BOOLEAN DEFAULT TRUE,
                 sort_order INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+            );
+
+            -- Коды товаров (для автовыдачи)
+            CREATE TABLE IF NOT EXISTS product_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL,
+                code TEXT NOT NULL,
+                is_used BOOLEAN DEFAULT FALSE,
+                used_at TIMESTAMP,
+                order_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
             );
 
             -- Пользователи
@@ -146,7 +160,9 @@ class Database:
                 user_id INTEGER,
                 telegram_id INTEGER NOT NULL,
                 email TEXT,
-                status TEXT DEFAULT 'pending',
+                status TEXT DEFAULT 'pending', -- pending, paid, waiting_data, completed, cancelled
+                delivery_type TEXT DEFAULT 'auto', -- auto или manual
+                customer_data TEXT, -- данные от клиента (для manual доставки)
                 total_amount DECIMAL(10, 2) NOT NULL,
                 payment_method TEXT,
                 payment_status TEXT DEFAULT 'pending',
@@ -847,6 +863,78 @@ class Database:
         )
         await self._conn.commit()
         return True
+
+    async def get_product_codes_count(self, product_id: int) -> int:
+        """Получить количество доступных кодов для товара"""
+        async with self._conn.execute(
+            "SELECT COUNT(*) as count FROM product_codes WHERE product_id = ? AND is_used = FALSE",
+            (product_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row['count'] if row else 0
+
+    async def get_unused_product_code(self, product_id: int) -> Optional[str]:
+        """Получить неиспользованный код для товара"""
+        async with self._conn.execute(
+            """SELECT id, code FROM product_codes 
+               WHERE product_id = ? AND is_used = FALSE 
+               LIMIT 1""",
+            (product_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                await self._conn.execute(
+                    "UPDATE product_codes SET is_used = TRUE, used_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (row['id'],)
+                )
+                await self._conn.commit()
+                return row['code']
+            return None
+
+    async def add_product_code(self, product_id: int, code: str) -> bool:
+        """Добавить код для товара"""
+        try:
+            await self._conn.execute(
+                "INSERT INTO product_codes (product_id, code) VALUES (?, ?)",
+                (product_id, code)
+            )
+            await self._conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка добавления кода: {e}")
+            return False
+
+    async def add_product_codes_bulk(self, product_id: int, codes: List[str]) -> int:
+        """Массовое добавление кодов"""
+        count = 0
+        for code in codes:
+            try:
+                await self._conn.execute(
+                    "INSERT INTO product_codes (product_id, code) VALUES (?, ?)",
+                    (product_id, code.strip())
+                )
+                count += 1
+            except Exception as e:
+                logger.error(f"Ошибка добавления кода {code}: {e}")
+        await self._conn.commit()
+        return count
+
+    async def update_order_customer_data(self, order_id: int, customer_data: str) -> bool:
+        """Обновить данные клиента в заказе"""
+        await self._conn.execute(
+            "UPDATE orders SET customer_data = ?, status = 'waiting_data', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (customer_data, order_id)
+        )
+        await self._conn.commit()
+        return True
+
+    async def get_orders_waiting_data(self) -> List[Dict]:
+        """Заказы ожидающие данных от клиента"""
+        async with self._conn.execute(
+            """SELECT * FROM orders WHERE status = 'waiting_data' ORDER BY created_at DESC"""
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows] if rows else []
 
 
 # Глобальный экземпляр
