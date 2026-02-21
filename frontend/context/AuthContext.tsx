@@ -1,7 +1,6 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import axios from 'axios'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 
@@ -34,7 +33,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const response = await axios.get(`${API_URL}/auth/profile`, {
+      const axios = await import('axios')
+      const response = await axios.default.get(`${API_URL}/auth/profile`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       setUser(response.data.user)
@@ -52,7 +52,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refreshUser])
 
   const login = async (email: string, passwordHash: string) => {
-    const response = await axios.post(`${API_URL}/auth/login`, {
+    const axios = await import('axios')
+    const response = await axios.default.post(`${API_URL}/auth/login`, {
       email,
       password: passwordHash
     })
@@ -63,7 +64,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const register = async (email: string, passwordHash: string, full_name: string) => {
-    const response = await axios.post(`${API_URL}/auth/register`, {
+    const axios = await import('axios')
+    const response = await axios.default.post(`${API_URL}/auth/register`, {
       email,
       password: passwordHash,
       full_name
@@ -78,7 +80,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const token = localStorage.getItem('auth_token')
     if (token) {
       try {
-        await axios.post(`${API_URL}/auth/logout`, {}, {
+        const axios = await import('axios')
+        await axios.default.post(`${API_URL}/auth/logout`, {}, {
           headers: { Authorization: `Bearer ${token}` }
         })
       } catch (error) {

@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: neymaryshop_redis
+    restart: unless-stopped
+    command: redis-server --requirepass 53e9e797abf5d0c32e13920671d91a3ab3a5465783b8f25e8edbc5d493ba6da8d04b51731472115549b4a142b2d5e1d63634514b6fa4ad1625b350a81f673284 --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: neymaryshop_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: neymaryshop
+      POSTGRES_USER: neymary
+      POSTGRES_PASSWORD: ef8afb33a2b3f48d79b265c25795ff4093c7bc1e9873c845060919fc8f9cbeef524be90302eac714db0fab5d716a8a85a11cad7fba850df1630f959b08a14337
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./database/migrations:/docker-entrypoint-initdb.d/migrations
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U neymary"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: neymaryshop_backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+      DATABASE_URL: postgresql://neymary:ef8afb33a2b3f48d79b265c25795ff4093c7bc1e9873c845060919fc8f9cbeef524be90302eac714db0fab5d716a8a85a11cad7fba850df1630f959b08a14337@postgres:5432/neymaryshop
+      REDIS_URL: redis://:53e9e797abf5d0c32e13920671d91a3ab3a5465783b8f25e8edbc5d493ba6da8d04b51731472115549b4a142b2d5e1d63634514b6fa4ad1625b350a81f673284@redis:6379
+      JWT_SECRET: 022f6509522e02f8a76feef724daf9f3f251aaf4552952a6c65118c6f40220f23c02b18c5c366eaf78e5f248b2d2549c4159cf235ef112cd12fb4937879c1a1a
+      JWT_REFRESH_SECRET: f786ca1f7a40b25931e8cabe4170ee4a327318f879d1d4a06d4d347038b5161c03288a595a0c7c33d6f90b558e82f71f85ca9ccd0bb9629695a914a030a56f1f
+      ADMIN_TOKEN: q5wef5sfdasfA$D4asr
+      FRONTEND_URL: http://localhost:3000
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/logs:/app/logs
+      - ./backend/uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3002/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:3002/api
+    container_name: neymaryshop_admin
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3003
+      NEXT_PUBLIC_API_URL: http://localhost:3002/api
+    ports:
+      - "3003:3003"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3003', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres_data:
+  redis_data:

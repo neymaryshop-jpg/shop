@@ -179,6 +179,7 @@ router.get('/orders/:id', authenticateAdmin, async (req: Request, res: Response)
 router.post('/orders/:id/verify-payment', authenticateAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const orderId = Array.isArray(id) ? id[0] : id;
     const { verified, note, amount_received } = req.body;
 
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -193,7 +194,7 @@ router.post('/orders/:id/verify-payment', authenticateAdmin, async (req: Request
         FROM orders o
         LEFT JOIN users u ON o.customer_email = u.email
         WHERE o.id = $1
-      `, [id]);
+      `, [orderId]);
 
       if (orderResult.rows.length === 0) {
         await client.query('ROLLBACK');
@@ -207,8 +208,8 @@ router.post('/orders/:id/verify-payment', authenticateAdmin, async (req: Request
       let paymentStatus = verified ? 'verified' : 'rejected';
 
       await client.query(`
-        UPDATE orders 
-        SET 
+        UPDATE orders
+        SET
           status = $1,
           payment_status = $2,
           payment_note = $3,
@@ -217,12 +218,12 @@ router.post('/orders/:id/verify-payment', authenticateAdmin, async (req: Request
           verified_at = NOW(),
           updated_at = NOW()
         WHERE id = $6
-      `, [newStatus, paymentStatus, note || null, amount_received || null, (req as any).admin.id, id]);
+      `, [newStatus, paymentStatus, note || null, amount_received || null, (req as any).admin.id, orderId]);
 
       // Отправляем уведомление в Telegram
       await sendTelegramNotification({
         type: 'payment_verification',
-        order_id: parseInt(id),
+        order_id: parseInt(orderId),
         verified,
         amount: order.total_amount,
         amount_received: amount_received || order.total_amount,
@@ -237,37 +238,37 @@ router.post('/orders/:id/verify-payment', authenticateAdmin, async (req: Request
         setTimeout(async () => {
           try {
             await pool.query(`
-              UPDATE orders 
+              UPDATE orders
               SET status = 'processing', updated_at = NOW()
               WHERE id = $1 AND status = 'confirmed'
-            `, [id]);
+            `, [orderId]);
 
             // Завершаем заказ через 5 минут
             setTimeout(async () => {
               try {
                 const deliveryCode = generateDeliveryCode();
-                
+
                 await pool.query(`
-                  UPDATE orders 
-                  SET 
+                  UPDATE orders
+                  SET
                     status = 'completed',
                     completed_at = NOW(),
                     updated_at = NOW()
                   WHERE id = $1 AND status = 'processing'
-                `, [id]);
+                `, [orderId]);
 
                 await pool.query(`
-                  UPDATE order_items 
-                  SET 
+                  UPDATE order_items
+                  SET
                     delivery_data = jsonb_build_object('code', $1),
                     delivered_at = NOW()
                   WHERE order_id = $2
-                `, [deliveryCode, id]);
+                `, [deliveryCode, orderId]);
 
                 // Отправляем уведомление о завершении
                 await sendTelegramNotification({
                   type: 'order_completed',
-                  order_id: parseInt(id),
+                  order_id: parseInt(orderId),
                   delivery_code: deliveryCode,
                   customer_name: order.full_name || order.customer_email
                 });

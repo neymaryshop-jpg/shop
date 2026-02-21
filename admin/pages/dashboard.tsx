@@ -44,18 +44,25 @@ export default function AdminDashboard() {
   const fetchData = async () => {
     try {
       const token = localStorage.getItem('admin_token');
-      
+
       const [ordersRes, statsRes] = await Promise.all([
         axios.get(`${API_URL}/admin/orders`, {
           headers: { Authorization: `Bearer ${token}` }
-        }),
+        }).catch(() => ({ data: { orders: [], pagination: { page: 1, limit: 20, total: 0, pages: 0 } } })),
         axios.get(`${API_URL}/admin/stats`, {
           headers: { Authorization: `Bearer ${token}` }
-        }).catch(() => ({ data: { totalOrders: 0, pendingOrders: 0, totalRevenue: 0, todayOrders: 0 } }))
+        }).catch(() => ({ data: { total_orders: 0, pending_verification: 0, by_status: [], by_payment_method: [], daily_revenue: [], period: '7d' } }))
       ]);
 
-      setOrders(ordersRes.data);
-      setStats(statsRes.data);
+      setOrders(ordersRes.data.orders || []);
+      setStats({
+        totalOrders: statsRes.data.total_orders || 0,
+        pendingOrders: statsRes.data.pending_verification || 0,
+        totalRevenue: statsRes.data.daily_revenue?.[0]?.revenue 
+          ? parseFloat(statsRes.data.daily_revenue[0].revenue) 
+          : 0,
+        todayOrders: statsRes.data.by_status?.find((s: any) => s.status === 'today')?.count || 0
+      });
     } catch (err: any) {
       if (err.response?.status === 401) {
         localStorage.removeItem('admin_token');
@@ -126,7 +133,7 @@ export default function AdminDashboard() {
           </div>
           <div className={styles.statCard}>
             <h3>Общая выручка</h3>
-            <p className={styles.statNumber}>{stats.totalRevenue.toFixed(2)}₽</p>
+            <p className={styles.statNumber}>{(stats.totalRevenue || 0).toFixed(2)}₽</p>
           </div>
           <div className={styles.statCard}>
             <h3>Заказы сегодня</h3>
@@ -156,7 +163,7 @@ export default function AdminDashboard() {
                     <p>{new Date(order.created_at).toLocaleString('ru-RU')}</p>
                   </div>
                   <div className={styles.orderDetails}>
-                    <p className={styles.orderAmount}>{order.total_amount.toFixed(2)}₽</p>
+                    <p className={styles.orderAmount}>{(order.total_amount || 0).toFixed(2)}₽</p>
                     <span className={`${styles.status} ${styles[order.status]}`}>
                       {order.status === 'pending' && 'Ожидает'}
                       {order.status === 'awaiting_confirmation' && 'Ожидает подтверждения'}

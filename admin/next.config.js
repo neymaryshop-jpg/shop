@@ -1,8 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-  port: 3003,
-  assetPrefix: process.env.NODE_ENV === 'production' ? 'https://adm.neymaryshop.ton' : undefined,
+  
+  // Отключаем воркеры для стабильности в Docker
+  experimental: {
+    workerThreads: false,
+    cpus: 1,
+  },
+
   async rewrites() {
     return [
       {

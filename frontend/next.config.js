@@ -3,6 +3,18 @@ const nextConfig = {
   output: 'standalone',
   reactStrictMode: true,
 
+  // Отключаем воркеры для стабильности в Docker
+  experimental: {
+    workerThreads: false,
+    cpus: 1,
+  },
+
+  // Отключаем статическую генерацию для страниц ошибок
+  onDemandEntries: {
+    maxInactiveAge: 60 * 1000,
+    pagesBufferLength: 2,
+  },
+
   images: {
     formats: ['image/webp'],
     minimumCacheTTL: 86400,
@@ -10,25 +22,14 @@ const nextConfig = {
 
   compress: true,
 
-  experimental: {
-    optimizePackageImports: ['lucide-react'],
-  },
-
   webpack: (config, { isServer }) => {
-    if (isServer) {
-      config.externals.push({
-        'three': 'three',
-        '@react-three/fiber': '@react-three/fiber',
-        '@react-three/drei': '@react-three/drei',
-      });
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        http: false,
+        https: false,
+      };
     }
-    
-    // Fix API proxy in production
-    config.resolve.fallback = {
-      'http': 'https://node-http',
-      'https': 'https://node-https',
-    };
-    
     return config;
   },
 
@@ -40,7 +41,7 @@ const nextConfig = {
         destination: `${API_URL}/:path*`,
       },
     ];
-  }
+  },
 };
 
 module.exports = nextConfig;

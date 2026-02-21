@@ -200,6 +200,13 @@ export default function Homepage() {
           <div className="flex items-center gap-4">
             {user ? (
               <div className="flex items-center gap-4">
+                <Link href="/notifications" className="relative text-gray-300 hover:text-white">
+                  🔔
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-xs flex items-center justify-center">!</span>
+                </Link>
+                <Link href="/wishlist-page" className="text-gray-300 hover:text-white">
+                  ❤️
+                </Link>
                 <span className="text-gray-300">{user.email}</span>
                 <button
                   onClick={handleLogout}
@@ -209,9 +216,14 @@ export default function Homepage() {
                 </button>
               </div>
             ) : (
-              <Link href="/login" className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 px-6 py-2 rounded-lg font-semibold transition-all">
-                Войти
-              </Link>
+              <>
+                <Link href="/wishlist-page" className="text-gray-300 hover:text-white hidden sm:block">
+                  ❤️ Избранное
+                </Link>
+                <Link href="/login" className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 px-6 py-2 rounded-lg font-semibold transition-all">
+                  Войти
+                </Link>
+              </>
             )}
           </div>
         </div>
