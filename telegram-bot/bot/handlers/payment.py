@@ -17,6 +17,7 @@ router = Router()
 class PaymentState(StatesGroup):
     waiting_for_legal_accept = State()
     waiting_for_customer_data = State()
+    waiting_for_feedback = State()
 
 
 # Канал для отзывов
