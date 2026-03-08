@@ -48,20 +48,21 @@ export default function AdminDashboard() {
       const [ordersRes, statsRes] = await Promise.all([
         axios.get(`${API_URL}/admin/orders`, {
           headers: { Authorization: `Bearer ${token}` }
-        }).catch(() => ({ data: { orders: [], pagination: { page: 1, limit: 20, total: 0, pages: 0 } } })),
+        }).catch(() => ({ data: [] })),
         axios.get(`${API_URL}/admin/stats`, {
           headers: { Authorization: `Bearer ${token}` }
-        }).catch(() => ({ data: { total_orders: 0, pending_verification: 0, by_status: [], by_payment_method: [], daily_revenue: [], period: '7d' } }))
+        }).catch(() => ({ data: { total_orders: 0, pending_orders: 0, total_revenue: 0, today_orders: 0 } }))
       ]);
 
-      setOrders(ordersRes.data.orders || []);
+      // API возвращает массив заказов напрямую
+      const ordersData = Array.isArray(ordersRes.data) ? ordersRes.data : (ordersRes.data.orders || []);
+      setOrders(ordersData.slice(0, 10)); // Показываем только последние 10
+
       setStats({
-        totalOrders: statsRes.data.total_orders || 0,
-        pendingOrders: statsRes.data.pending_verification || 0,
-        totalRevenue: statsRes.data.daily_revenue?.[0]?.revenue 
-          ? parseFloat(statsRes.data.daily_revenue[0].revenue) 
-          : 0,
-        todayOrders: statsRes.data.by_status?.find((s: any) => s.status === 'today')?.count || 0
+        totalOrders: statsRes.data.totalOrders || statsRes.data.total_orders || 0,
+        pendingOrders: statsRes.data.pendingOrders || statsRes.data.pending_orders || 0,
+        totalRevenue: statsRes.data.totalRevenue || statsRes.data.total_revenue || 0,
+        todayOrders: statsRes.data.todayOrders || statsRes.data.today_orders || 0
       });
     } catch (err: any) {
       if (err.response?.status === 401) {
@@ -69,6 +70,7 @@ export default function AdminDashboard() {
         localStorage.removeItem('admin_user');
         window.location.href = '/';
       } else {
+        console.error('Fetch error:', err);
         setError('Ошибка при загрузке данных');
       }
     } finally {
@@ -112,7 +114,14 @@ export default function AdminDashboard() {
     <div className={styles.container}>
       <header className={styles.header}>
         <div className={styles.headerContent}>
-          <h1>🔐 Админ панель NeymaryShop</h1>
+          <div>
+            <h1>🔐 Админ панель NeymaryShop</h1>
+            <nav className={styles.adminNav}>
+              <a href="/dashboard" className={styles.navLink}>📊 Главная</a>
+              <a href="/orders" className={styles.navLink}>📦 Заказы</a>
+              <a href="/products" className={styles.navLink}>🛍️ Товары</a>
+            </nav>
+          </div>
           <button onClick={handleLogout} className={styles.logoutButton}>
             Выйти
           </button>

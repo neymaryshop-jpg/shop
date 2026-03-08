@@ -1,5 +1,5 @@
 import express, { Request, Response } from 'express';
-import { Pool } from 'pg';
+import { pool } from '../database';
 import { authenticateAdmin } from '../middleware/auth';
 import { sendTelegramNotification } from '../services/telegramService';
 
@@ -18,7 +18,6 @@ router.get('/orders', authenticateAdmin, async (req: Request, res: Response) => 
       limit = '20'
     } = req.query;
 
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     const client = await pool.connect();
 
     try {
@@ -116,7 +115,6 @@ router.get('/orders', authenticateAdmin, async (req: Request, res: Response) => 
 
     } finally {
       client.release();
-      await pool.end();
     }
 
   } catch (error) {
@@ -130,12 +128,11 @@ router.get('/orders/:id', authenticateAdmin, async (req: Request, res: Response)
   try {
     const { id } = req.params;
 
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     const client = await pool.connect();
 
     try {
       const result = await client.query(`
-        SELECT o.*, 
+        SELECT o.*,
           json_agg(
             json_build_object(
               'id', oi.id,
@@ -166,7 +163,6 @@ router.get('/orders/:id', authenticateAdmin, async (req: Request, res: Response)
 
     } finally {
       client.release();
-      await pool.end();
     }
 
   } catch (error) {
@@ -182,7 +178,6 @@ router.post('/orders/:id/verify-payment', authenticateAdmin, async (req: Request
     const orderId = Array.isArray(id) ? id[0] : id;
     const { verified, note, amount_received } = req.body;
 
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     const client = await pool.connect();
 
     try {
@@ -298,7 +293,6 @@ router.post('/orders/:id/verify-payment', authenticateAdmin, async (req: Request
       throw error;
     } finally {
       client.release();
-      await pool.end();
     }
 
   } catch (error) {
@@ -318,13 +312,12 @@ router.post('/orders/:id/update-status', authenticateAdmin, async (req: Request,
       return res.status(400).json({ error: 'Неверный статус' });
     }
 
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     const client = await pool.connect();
 
     try {
       const result = await client.query(`
-        UPDATE orders 
-        SET 
+        UPDATE orders
+        SET
           status = $1,
           admin_note = $2,
           updated_at = NOW()
@@ -344,7 +337,6 @@ router.post('/orders/:id/update-status', authenticateAdmin, async (req: Request,
 
     } finally {
       client.release();
-      await pool.end();
     }
 
   } catch (error) {
@@ -358,7 +350,6 @@ router.get('/stats', authenticateAdmin, async (req: Request, res: Response) => {
   try {
     const { period = '7d' } = req.query;
 
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     const client = await pool.connect();
 
     try {
@@ -381,39 +372,39 @@ router.get('/stats', authenticateAdmin, async (req: Request, res: Response) => {
       const queries = [
         // Общая статистика
         `SELECT COUNT(*) as total_orders FROM orders WHERE ${dateCondition}`,
-        
+
         // Заказы в разбивке по статусам
-        `SELECT 
+        `SELECT
             status,
             COUNT(*) as count,
             COALESCE(SUM(total_amount), 0) as total_amount
-          FROM orders 
+          FROM orders
           WHERE ${dateCondition}
           GROUP BY status`,
-        
+
         // Способы оплаты
-        `SELECT 
+        `SELECT
             payment_method,
             COUNT(*) as count,
             COALESCE(SUM(total_amount), 0) as total_amount
-          FROM orders 
+          FROM orders
           WHERE ${dateCondition}
           GROUP BY payment_method`,
-        
+
         // Выручка по дням
-        `SELECT 
+        `SELECT
             DATE(created_at) as date,
             COUNT(*) as orders,
             COALESCE(SUM(total_amount), 0) as revenue
-          FROM orders 
+          FROM orders
           WHERE ${dateCondition} AND status IN ('completed', 'confirmed')
           GROUP BY DATE(created_at)
           ORDER BY date DESC
           LIMIT 7`,
-        
+
         // Ожидающие верификации
-        `SELECT COUNT(*) as pending_verification 
-          FROM orders 
+        `SELECT COUNT(*) as pending_verification
+          FROM orders
           WHERE status = 'awaiting_confirmation'`
       ];
 
@@ -434,7 +425,6 @@ router.get('/stats', authenticateAdmin, async (req: Request, res: Response) => {
 
     } finally {
       client.release();
-      await pool.end();
     }
 
   } catch (error) {

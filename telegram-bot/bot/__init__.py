@@ -8,27 +8,11 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import DeleteWebhook
-from aiogram.types import CallbackQuery, Message
 
 from bot.config import settings
+from bot.middlewares.logging import LoggingMiddleware
 
 logger = logging.getLogger(__name__)
-
-
-# Middleware для логирования
-async def log_callback_query(call: CallbackQuery, handler):
-    """Логирование всех callback query"""
-    username = call.from_user.username or f"id{call.from_user.id}"
-    logger.info(f"🔘 CALLBACK User:{call.from_user.id} (@{username}) Data:{call.data}")
-    return await handler(call)
-
-
-async def log_message(message: Message, handler):
-    """Логирование всех сообщений"""
-    if message.text:
-        username = message.from_user.username or f"id{message.from_user.id}"
-        logger.info(f"💬 MESSAGE User:{message.from_user.id} (@{username}) Text:{message.text[:100]}")
-    return await handler(message)
 
 
 # Инициализация бота
@@ -45,8 +29,7 @@ bot = Bot(
 dp = Dispatcher(storage=MemoryStorage())
 
 # Регистрация middleware для логирования
-dp.callback_query.middleware(log_callback_query)
-dp.message.middleware(log_message)
+dp.update.middleware(LoggingMiddleware())
 
 
 # Функция для очистки webhook при запуске

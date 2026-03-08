@@ -26,14 +26,14 @@ services:
       POSTGRES_DB: neymaryshop
       POSTGRES_USER: neymary
       POSTGRES_PASSWORD: neymary123
+      PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
-      - ./database/migrations:/docker-entrypoint-initdb.d/migrations
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U neymary"]
+      test: ["CMD-SHELL", "pg_isready -U neymary -d neymaryshop"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -48,6 +48,10 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        NO_PROXY: "registry-1.docker.io,download.docker.com,hub.docker.com"
+        HTTP_PROXY: ""
+        HTTPS_PROXY: ""
     container_name: neymaryshop_backend
     restart: unless-stopped
     environment:
@@ -58,8 +62,11 @@ services:
       JWT_SECRET: ${JWT_SECRET:-secret123}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-refreshsecret123}
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3002/api}
-      FRONTEND_URL: http://localhost:3000
-      ADMIN_URL: http://localhost:3003
+      FRONTEND_URL: http://frontend:3000
+      ADMIN_URL: http://admin:3003
+      NO_PROXY: "registry-1.docker.io,download.docker.com,hub.docker.com"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
     ports:
       - "3002:3002"
     volumes:
@@ -84,12 +91,19 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NO_PROXY: "registry-1.docker.io,download.docker.com,hub.docker.com"
+        HTTP_PROXY: ""
+        HTTPS_PROXY: ""
     container_name: neymaryshop_frontend
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3000
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3002/api}
+      NO_PROXY: "registry-1.docker.io,download.docker.com,hub.docker.com"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
     ports:
       - "3000:3000"
     depends_on:
@@ -108,12 +122,20 @@ services:
     build:
       context: ./admin
       dockerfile: Dockerfile
+      args:
+        NO_PROXY: "registry-1.docker.io,download.docker.com,hub.docker.com"
+        HTTP_PROXY: ""
+        HTTPS_PROXY: ""
     container_name: neymaryshop_admin
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3003
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3002/api}
+      NEXT_PUBLIC_API_URL: http://localhost:3002/api
+      API_URL: http://backend:3002/api
+      NO_PROXY: "registry-1.docker.io,download.docker.com,hub.docker.com"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
     ports:
       - "3003:3003"
     depends_on:
@@ -133,6 +155,10 @@ services:
     build:
       context: ./telegram-bot
       dockerfile: Dockerfile
+      args:
+        NO_PROXY: "registry-1.docker.io,download.docker.com,hub.docker.com"
+        HTTP_PROXY: ""
+        HTTPS_PROXY: ""
     container_name: neymaryshop_telegram_bot
     restart: unless-stopped
     environment:
@@ -145,6 +171,9 @@ services:
       TON_NETWORK: ${TON_NETWORK:-testnet}
       TON_WALLET_ADDRESS: ${TON_WALLET_ADDRESS}
       TON_WALLET_MNEMONIC: ${TON_WALLET_MNEMONIC}
+      NO_PROXY: "registry-1.docker.io,download.docker.com,hub.docker.com"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
     depends_on:
       - backend
       - postgres

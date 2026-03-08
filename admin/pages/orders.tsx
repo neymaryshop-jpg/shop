@@ -93,18 +93,22 @@ export default function AdminOrders() {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      setOrders(response.data.orders);
-      setPagination(prev => ({
-        ...prev,
-        ...response.data.pagination
-      }));
+      // API возвращает массив заказов напрямую
+      const ordersData = Array.isArray(response.data) ? response.data : (response.data.orders || []);
+      setOrders(ordersData);
+      
+      // Обновляем пагинацию если есть
+      if (response.data.pagination) {
+        setPagination(prev => ({ ...prev, ...response.data.pagination }));
+      }
     } catch (err: any) {
       if (err.response?.status === 401) {
         localStorage.removeItem('admin_token');
         localStorage.removeItem('admin_user');
         window.location.href = '/';
       } else {
-        setError('Ошибка при загрузке заказов');
+        console.error('Orders error:', err);
+        setError('Ошибка при загрузке заказов: ' + (err.message || 'Неизвестная ошибка'));
       }
     }
   };
