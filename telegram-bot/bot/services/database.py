@@ -464,6 +464,20 @@ class Database:
         )
         await self._conn.commit()
 
+    async def add_product(self, name: str, price: float, delivery_type: str = 'auto',
+                          category_id: int = 1, description: str = None) -> int:
+        """Добавить товар"""
+        cursor = await self._conn.execute(
+            """INSERT INTO products (name, price_android, price_pc, price_ios,
+                                    category_id, description, delivery_type, is_active)
+               VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)
+               RETURNING id""",
+            (name, price, price, price, category_id, description, delivery_type)
+        )
+        await self._conn.commit()
+        row = await cursor.fetchone()
+        return row['id'] if row else 0
+
     # ==========================================
     # НОВЫЕ МЕТОДЫ ДЛЯ РАСШИРЕННЫХ ФУНКЦИЙ
     # ==========================================

@@ -1,159 +1,449 @@
-The user wants me to create a comprehensive project summary based on the conversation history. Let me analyze what happened in this session:
+# NeymaryShop Marketplace - Complete Project Summary
 
-1. The user asked to add more options/features to their site and Telegram bot
-2. I studied the project structure (NeymaryShop - an e-commerce platform for digital goods)
-3. I created new features across multiple components:
-   - Database migrations (wishlist, reviews, notifications, comparisons, referrals, coupons, support tickets)
-   - Backend API routes (features.ts with all new endpoints)
-   - Frontend pages (catalog.tsx, compare.tsx, wishlist-page.tsx, notifications.tsx)
-   - Telegram bot extensions (keyboards_extended.py, handlers/extended.py, database methods)
-4. Updated all dependencies to latest stable versions without vulnerabilities
-5. Updated README.md to version 2.2
-
-Let me create a comprehensive summary following the markdown format specified.# Project Summary
-
-## Overall Goal
-Expand NeymaryShop e-commerce platform with new customer features (wishlist, reviews, product comparison, notifications, referral system) and update all dependencies to latest stable versions without security vulnerabilities.
-
-## Key Knowledge
-
-### Technology Stack
-- **Frontend:** Next.js 14.2.35 (Pages Router), React 18.3.1, TypeScript 5.7.3, Tailwind CSS 3.4.17, Axios 1.8.2
-- **Backend:** Node.js 18+, Express.js 4.21.2, TypeScript 5.7.3, PostgreSQL 15, Redis 7
-- **Telegram Bot:** Python 3.9+, aiogram 3.18.0, asyncpg 0.30.0
-- **Infrastructure:** Docker Compose, Nginx (reverse proxy), TON Blockchain
-
-### Architecture Decisions
-- Pages Router preferred over App Router for consistency across frontend and admin
-- SQLite for Telegram bot local storage, PostgreSQL for main application
-- Redis for caching (products: 300s TTL, categories: 600s TTL)
-- JWT authentication with separate admin sessions
-
-### Security Requirements
-- All dependencies must be free of known CVEs and 0day vulnerabilities
-- qs package locked to 6.14.2 (DoS protection)
-- path-to-regexp locked to 0.1.12
-- certifi updated to 2025.1.31
-- bcryptjs 3.0.2 for password hashing
-
-### Build Commands
-```bash
-# Backend
-cd backend && npm install && npm run build && npm start
-
-# Frontend
-cd frontend && npm install && npm run dev
-
-# Telegram Bot
-cd telegram-bot && pip install -r requirements.txt && python main.py
-
-# Docker
-docker-compose up -d --build
-
-# Security Audit
-npm audit && npm audit fix
-```
-
-### Project Structure
-```
-neymaryshop/
-├── backend/src/routes/features.ts    # New API endpoints
-├── frontend/pages/                   # New pages (catalog, compare, wishlist, notifications)
-├── telegram-bot/bot/handlers/extended.ts  # New bot handlers
-├── database/migrations/002_add_new_features.sql
-└── README.md                         # Updated to v2.2
-```
-
-## Recent Actions
-
-### Completed Features (V2.2)
-1. **[DONE] Database Migration** - Created 13 new tables:
-   - `wishlists`, `reviews`, `review_votes`, `notifications`
-   - `product_comparisons`, `referrals`, `referral_earnings`
-   - `coupons`, `user_coupons`, `newsletter_subscriptions`
-   - `support_tickets`, `ticket_messages`, `product_views`
-
-2. **[DONE] Backend API** - Created `features.ts` with 20+ new endpoints:
-   - Wishlist management (GET/POST/DELETE)
-   - Reviews and ratings with voting system
-   - Notifications system
-   - Product comparison API
-   - Referral system with bonus tracking
-   - Coupon validation
-   - Newsletter subscriptions
-   - Support tickets
-
-3. **[DONE] Frontend Pages** - Created 4 new pages:
-   - `catalog.tsx` - Advanced filtering, sorting, search, comparison
-   - `compare.tsx` - Side-by-side product comparison (up to 4 items)
-   - `wishlist-page.tsx` - User's favorite items
-   - `notifications.tsx` - Notification center with read/unread status
-
-4. **[DONE] Telegram Bot Extensions**:
-   - `keyboards_extended.py` - 15+ new keyboard layouts
-   - `handlers/extended.py` - Handlers for wishlist, comparison, notifications, referrals, reviews
-   - Updated `database.py` with 15+ new methods
-   - Integrated with main handler registry
-
-5. **[DONE] Dependency Updates** - All packages updated to latest stable versions:
-   - Backend: 0 vulnerabilities (qs 6.14.2 via overrides)
-   - Frontend: Next.js 14.2.35 (latest 14.x)
-   - Bot: aiogram 3.18.0, all security patches applied
-
-6. **[DONE] Documentation** - Updated README.md to v2.2:
-   - Added new features section
-   - Updated dependency versions table
-   - Added security notes
-   - Updated API endpoints documentation
-
-### Code Quality
-- Backend TypeScript compiles without errors (`npm run build` ✅)
-- Frontend has minor Next.js warnings (standard for Pages Router)
-- All new code follows existing project conventions
-- Russian language used for user-facing text
-
-## Current Plan
-
-### Completed [DONE]
-1. Database schema with 13 new tables
-2. Backend API routes for all new features
-3. Frontend pages (catalog, compare, wishlist, notifications)
-4. Telegram bot extended handlers
-5. Dependency updates with security audit
-6. README.md documentation update
-
-### Next Steps [TODO]
-1. **Testing** - Add Jest tests for backend, Pytest for bot
-2. **Docker Optimization** - Reduce image sizes, add multi-stage builds
-3. **Redis Caching** - Implement caching for new API endpoints
-4. **Migration Script** - Create automated migration runner
-5. **Environment Setup** - Update .env.example with new variables
-
-### Pending Decisions
-- Whether to upgrade to Next.js 15.x (requires Node.js 20+)
-- CI/CD pipeline tool selection (GitHub Actions vs GitLab CI)
-- Monitoring stack choice (Prometheus vs DataDog)
-
-### Known Issues
-- Frontend build has warnings about `_document.tsx` import (non-blocking)
-- Next.js 14.x has known vulnerabilities GHSA-9g9p-9gw9-jx7f and GHSA-h25m-26qc-wcjf but they don't affect standard configuration without remotePatterns
-- Test coverage currently at 0% - priority for V2.3
-
-### Admin Credentials
-- **Email:** admin@neymaryshop.com
-- **Password:** admin123
-- **Default Roles:** super_admin, admin, moderator
-
-### Service Ports
-- Frontend: 3000
-- Backend API: 3002
-- Admin Panel: 3003
-- PostgreSQL: 5432
-- Redis: 6379
+**Version:** 2.5 (Latest Update: 2026-03-01)  
+**Tech Stack:** TypeScript, Next.js 14, Express, PostgreSQL 15, Redis 7, Docker Compose  
+**Status:** ✅ Production Ready
 
 ---
 
-## Summary Metadata
-**Update time**: 2026-02-18T20:17:00.000Z
-**Version**: 2.3 (Docker Release)
-**Status**: ✅ Production Ready 
+## 📋 Table of Contents
+
+1. [Project Overview](#project-overview)
+2. [Architecture](#architecture)
+3. [Completed Tasks (2026-03-01)](#completed-tasks-2026-03-01)
+4. [File Structure](#file-structure)
+5. [Database Schema](#database-schema)
+6. [API Endpoints](#api-endpoints)
+7. [Design System](#design-system)
+8. [Quick Start](#quick-start)
+9. [Environment Variables](#environment-variables)
+10. [Testing Checklist](#testing-checklist)
+11. [Changelog](#changelog)
+
+---
+
+## 📊 Project Overview
+
+**NeymaryShop** is a modern digital goods marketplace with automatic delivery. Built with TypeScript, Next.js (Pages Router), Express, PostgreSQL, and Redis. Full Docker support for production deployment.
+
+### Key Features
+- 🛒 E-commerce platform for digital goods (games, subscriptions, accounts)
+- 🤖 Telegram bot integration for notifications and sales
+- 🔐 Admin panel with full CRUD management
+- 💳 Manual payment system (Card + SBP)
+- 📦 Automatic delivery codes
+- 🎨 Dark theme with monospace font
+- 📱 Mobile-first responsive design
+- 🔄 Platform-aware content (iOS/macOS vs Windows/Android)
+
+---
+
+## 🏗 Architecture
+
+### Frontend
+- **Framework:** Next.js 14.2.35 (Pages Router)
+- **Styling:** Tailwind CSS 3.4.17
+- **State:** React Hooks + Context API
+- **HTTP Client:** Axios 1.8.2
+- **TypeScript:** 5.7.3
+
+### Backend
+- **Framework:** Node.js + Express.js 4.21.2
+- **Database:** PostgreSQL 15
+- **Cache:** Redis 7
+- **Auth:** JWT + bcrypt 3.0.2
+- **TypeScript:** 5.7.3
+
+### Telegram Bot
+- **Framework:** Python 3.9+ + aiogram 3.18.0
+- **Database:** SQLite + asyncpg 0.30.0
+- **Cache:** Redis 5.2.1
+
+### Infrastructure
+- **Containerization:** Docker + Docker Compose
+- **Web Server:** Nginx (reverse proxy)
+- **Payments:** Manual (Card + SBP)
+- **Notifications:** Telegram Bot
+
+---
+
+## ✅ Completed Tasks (2026-03-01)
+
+### 1. Categories Data Integration ✅
+- **Created:** `frontend/src/data/categories.ts`
+- **Source:** `steam.txt` file with 38 categories
+- **Interface:** Category with id, category, slug, emojis[], description, faq[]
+- **Features:**
+  - Type-safe category data
+  - FAQ with emoji icons
+  - Long-form descriptions
+  - Export functions: `getCategoryBySlug()`, `getAllCategories()`, `searchCategories()`
+
+### 2. Cart Logic Improvements ✅
+- **Fixed:** Duplicate items now increment quantity instead of creating duplicates
+- **Added:** `increment(id)` and `decrement(id)` methods
+- **Auto-remove:** Items with quantity < 1 are automatically removed
+- **Files modified:**
+  - `frontend/pages/product/[id].tsx` - handleAddToCart with duplicate check
+  - `frontend/pages/cart.tsx` - increment/decrement methods, auto-remove logic
+
+### 3. Checkout & Payment Redesign ✅
+- **Removed:** External payment API calls
+- **Removed:** TON cryptocurrency payment (will be added later)
+- **Added:** Manual payment details display
+- **Payment methods:**
+  - Card (RF) - 2200 7012 3242 4173 (Константин И., Т-Банк)
+  - SBP - +7 (931) 104-38-39 (Т-Банк)
+- **Files modified:**
+  - `frontend/pages/checkout.tsx` - getPaymentDetails function (card + SBP only)
+  - `frontend/pages/checkout/success.tsx` - Payment details UI with copy buttons
+
+### 4. Header Redesign ✅
+- **Simplified:** Only logo and cart icon
+- **Removed:** Support link, catalog link from header
+- **File modified:** `frontend/components/Header.tsx`
+
+### 5. Homepage Redesign ✅
+- **Removed:** Old hero banner "Цифровые товары с мгновенной выдачей..."
+- **Removed:** "ПЕРЕЙТИ В КАТАЛОГ" button
+- **Added:** Large category cards grid (donatov.net style)
+- **Features:**
+  - Category cards with emoji icons
+  - Hover effects and gradients
+  - Category descriptions
+  - Emoji set preview
+- **File modified:** `frontend/pages/index.tsx`
+
+### 6. Category Page with FAQ ✅
+- **Data source:** `frontend/src/data/categories.ts`
+- **Features:**
+  - Category icon and title at top
+  - FAQ block with emoji icons (❓ questions)
+  - Long description before products
+- **File created:** `frontend/src/data/categories.ts`
+
+### 7. Sticky Footer Implementation ✅
+- **CSS:** flex flex-col min-h-screen
+- **Content:** flex-grow
+- **Footer:** mt-auto (always at bottom)
+- **File modified:** `frontend/styles/globals.css`
+
+### 8. Footer Content Update ✅
+- **Brand:** NeymaryShop
+- **Links:** Каталог, Соглашение, Политика, Поддержка, TG канал
+- **Copyright:** © 2021-2026 NeymaryShop
+- **Owner:** ИП Ионцев К.К. (сделка между физлицами)
+- **Origin marker:** Origin: Web
+- **File modified:** `frontend/components/Footer.tsx`
+
+### 9. Database Migration ✅
+- **Added 38 categories** with full content:
+  - Games (15): Steam, Epic Games, Origin, Ubisoft, Battle.net, Xbox, PlayStation, Nintendo, Roblox, Fortnite, Minecraft, Genshin, PUBG, Valorant, LoL
+  - Subscriptions (11): Telegram Premium, YouTube Premium, Spotify, Netflix, Disney+, HBO Max, Amazon Prime, Apple Music, Яндекс Плюс, VK Музыка
+  - Accounts (5): Discord, FACEIT, ESEA, ChatGPT Plus, Midjourney
+  - VPN & Security (2): VPN, Антивирусы
+  - Education (3): Coursera, Udemy, Skillshare
+  - Other (3): Gift Cards, Software, Mobile Apps
+- **File:** `database/migrations/004_add_categories.sql`
+
+---
+
+## 📁 File Structure
+
+```
+neymaryshop/
+├── frontend/
+│   ├── src/data/
+│   │   └── categories.ts          # 38 categories with FAQ
+│   ├── pages/
+│   │   ├── index.tsx              # Homepage with category grid
+│   │   ├── cart.tsx               # Cart with increment/decrement
+│   │   ├── checkout.tsx           # Manual payment details
+│   │   └── checkout/success.tsx   # Order success with payment info
+│   ├── components/
+│   │   ├── Header.tsx             # Logo + cart only
+│   │   └── Footer.tsx             # Full footer with links
+│   └── styles/
+│       └── globals.css            # Sticky footer CSS
+├── backend/
+│   └── src/
+│       ├── index.ts               # Main server with CORS fix
+│       ├── database.ts            # Shared DB pool
+│       └── routes/
+│           ├── adminOrders.ts     # Admin orders (no pool.end)
+│           ├── adminProducts.ts   # Admin products CRUD
+│           └── upload.ts          # Image upload endpoints
+├── database/
+│   └── migrations/
+│       ├── 003_add_faq_and_source_fields.sql
+│       └── 004_add_categories.sql
+├── admin/
+│   └── pages/
+│       ├── index.tsx              # Admin login
+│       ├── dashboard.tsx          # Admin dashboard
+│       ├── orders.tsx             # Orders management
+│       └── products.tsx           # Products management
+├── telegram-bot/
+│   └── bot/
+│       ├── handlers/
+│       ├── services/
+│       └── middlewares/
+├── .qwen/
+│   └── PROJECT_SUMMARY.md         # This file
+├── docker-compose.yml
+├── README.md
+├── CHANGELOG.md
+├── QUICKSTART.md
+└── SETUP.md
+```
+
+---
+
+## 📊 Database Schema
+
+### Categories (new fields)
+```sql
+source VARCHAR(10) DEFAULT 'web'  -- 'web' or 'tg'
+art_url VARCHAR(500)              -- Category art image
+long_description TEXT             -- SEO description
+faq_json JSONB DEFAULT '[]'       -- FAQ array
+emoji_set VARCHAR(100)            -- Emoji set
+show_on_main BOOLEAN DEFAULT true -- Show on homepage
+```
+
+### Products (new fields)
+```sql
+source VARCHAR(10) DEFAULT 'web'  -- 'web' or 'tg'
+rating DECIMAL(3,2) DEFAULT 0     -- Product rating
+reviews_count INTEGER DEFAULT 0   -- Review count
+```
+
+### Orders
+```sql
+id, user_id, status, payment_method, customer_email, customer_telegram
+subtotal, discount_amount, total_amount, payment_status
+created_at, updated_at, completed_at
+```
+
+---
+
+## 🔗 API Endpoints
+
+### Categories
+- `GET /api/categories` - All categories
+- `GET /api/admin/products` - Admin products (no cache)
+
+### Orders
+- `POST /api/orders` - Create order
+- `GET /api/orders/:id` - Get order with code
+- `GET /api/admin/orders` - Admin orders list
+
+### Upload
+- `POST /api/upload/product-image` - Upload product image
+- `POST /api/upload/category-image` - Upload category image
+
+### Auth
+- `POST /api/auth/admin/login` - Admin login
+- `POST /api/auth/login` - User login
+- `GET /api/auth/profile` - User profile
+
+---
+
+## 🎨 Design System
+
+### Colors
+- BG Primary: `#0a0a0a`
+- BG Secondary: `#111111`
+- BG Card: `#16213e`
+- Text Primary: `#e0e0e0`
+- Accent: `#00ff9d`
+- Accent Hover: `#00cc7d`
+
+### Font
+- Monospace: `ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas`
+
+### Components
+- **TrustBadges:** ⚡ Мгновенная выдача, 🔒 TON защита, 🎧 Поддержка 24/7
+- **Category Cards:** Large grid with emoji, hover effects
+- **Sticky Footer:** Always at bottom with flexbox
+
+---
+
+## 🚀 Quick Start
+
+### Docker (recommended)
+```bash
+# Start all services
+docker-compose up -d redis postgres backend frontend admin
+
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs -f backend
+docker-compose logs -f frontend
+
+# Stop all
+docker-compose down
+```
+
+### Local development
+```bash
+# Terminal 1: Redis
+docker run -d -p 6379:6379 redis:7-alpine
+
+# Terminal 2: PostgreSQL
+docker run -d -p 5432:5432 -e POSTGRES_DB=neymaryshop -e POSTGRES_USER=neymary -e POSTGRES_PASSWORD=neymary123 postgres:15-alpine
+
+# Terminal 3: Backend
+cd backend && npm install && npm run dev
+
+# Terminal 4: Frontend
+cd frontend && npm install && npm run dev
+
+# Terminal 5: Admin
+cd admin && npm install && npm run dev
+```
+
+### URLs
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:3002/api
+- Admin Panel: http://localhost:3003
+
+### Admin Credentials
+- Email: admin@neymaryshop.com
+- Password: admin123
+
+---
+
+## 🔧 Environment Variables
+
+### .env (main)
+```env
+# Database
+POSTGRES_DB=neymaryshop
+POSTGRES_USER=neymary
+POSTGRES_PASSWORD=neymary123
+DATABASE_URL=postgresql://neymary:neymary123@postgres:5432/neymaryshop
+
+# Redis
+REDIS_URL=redis://redis:6379
+
+# API
+NEXT_PUBLIC_API_URL=http://localhost:3002/api
+
+# JWT
+JWT_SECRET=your_jwt_secret_here
+JWT_REFRESH_SECRET=your_jwt_refresh_secret_here
+
+# Telegram
+TELEGRAM_BOT_TOKEN=your_bot_token
+ADMIN_IDS=your_admin_id
+```
+
+---
+
+## ✅ Testing Checklist
+
+### Cart
+- [x] Cart allows duplicate items (increments quantity)
+- [x] Decrement below 1 removes item
+- [x] increment/decrement methods work
+
+### Checkout
+- [x] Checkout shows payment details
+- [x] Success page shows payment info
+- [x] Only Card and SBP payment methods available
+
+### UI
+- [x] Header shows only cart icon
+- [x] Homepage shows category grid
+- [x] Footer sticky at bottom
+- [x] All 38 categories in database
+
+### Backend
+- [x] CORS works for admin panel
+- [x] Admin can login and view orders
+- [x] Image upload endpoints work
+
+---
+
+## 📝 Changelog
+
+### V2.5 (2026-03-01)
+- ✅ Added 38 categories with FAQ from steam.txt
+- ✅ Fixed cart duplicate items logic
+- ✅ Added manual payment system (Card + SBP)
+- ✅ Removed crypto payment (TON)
+- ✅ Redesigned homepage with category grid
+- ✅ Simplified header (logo + cart only)
+- ✅ Implemented sticky footer
+- ✅ Updated footer with all legal links
+
+### V2.4 (2026-02-24)
+- ✅ Frontend conversion redesign
+- ✅ Trust badges component
+- ✅ Urgency banners
+- ✅ 2-step checkout
+- ✅ Post-purchase modal with referrals
+- ✅ A/B testing for CTA buttons
+
+### V2.3 (2026-02-18)
+- ✅ Docker release
+- ✅ Full infrastructure setup
+- ✅ Admin panel integration
+- ✅ Telegram bot integration
+
+### V2.2 (2026-02-15)
+- ✅ New features API (wishlist, reviews, compare)
+- ✅ Frontend pages (catalog, compare, wishlist, notifications)
+- ✅ Dependency updates with security patches
+
+### V2.1 (2026-02-10)
+- ✅ Telegram bot critical fixes
+- ✅ Database name unification (neymaryshop)
+- ✅ Logging improvements for Docker
+
+---
+
+## 📞 Support
+
+- **Telegram:** @neymaryshop_support
+- **Email:** support@neymaryshop.com
+- **Owner:** ИП Ионцев К.К. (сделка между физическими лицами)
+
+---
+
+## 📄 License
+
+MIT License
+
+---
+
+**Generated:** 2026-03-01  
+**Status:** ✅ All tasks completed successfully  
+**Build:** ✅ Frontend compiled successfully (Next.js 14.2.35)
+  
+  
+## ?? Commission Rates & Loyalty System  
+  
+### Base Commission  
+- Standard (Windows/Android/Linux): +13%% from cost  
+- Premium (macOS/iOS): +15%% from cost  
+  
+### Loyalty Tiers  
+- ?? Bronze: 0%% discount (0 purchases)  
+- ?? Silver: 3%% discount (3+ purchases OR 3000?+ spent)  
+- ?? Gold: 5%% discount (7+ purchases OR 10000?+ spent)  
+- ?? Platinum: 8%% discount (15+ purchases OR 25000?+ spent)  
+  
+### Formula  
+```  
+Final Price = Cost ? (1 + PlatformRate) ? (1 - LoyaltyDiscount)  
+```  
+  
+### Examples  
+- 1000? cost, Standard, Bronze: 1130?  
+- 1000? cost, Premium, Bronze: 1150?  
+- 1000? cost, Standard, Gold: 1073.50? (save 56.50?!)  
+- 1000? cost, Premium, Platinum: 1058? (save 92?!) 

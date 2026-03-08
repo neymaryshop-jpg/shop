@@ -15,9 +15,15 @@ const pool = new Pool({
 
 // Директория для загрузок
 const UPLOAD_DIR = path.join(__dirname, '../../uploads');
+const PRODUCT_IMAGES_DIR = path.join(__dirname, '../../uploads/product_images');
+const CATEGORY_IMAGES_DIR = path.join(__dirname, '../../uploads/category_images');
 
-// Создаём директорию если её нет
-fs.mkdir(UPLOAD_DIR, { recursive: true }).catch(console.error);
+// Создаём директории если их нет
+Promise.all([
+  fs.mkdir(UPLOAD_DIR, { recursive: true }),
+  fs.mkdir(PRODUCT_IMAGES_DIR, { recursive: true }),
+  fs.mkdir(CATEGORY_IMAGES_DIR, { recursive: true })
+]).catch(console.error);
 
 // Настройка Multer
 const storage = multer.diskStorage({
@@ -65,6 +71,62 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
       success: true,
       url: fileUrl,
       filename: req.file.filename,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    });
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({ error: 'Ошибка загрузки файла' });
+  }
+});
+
+// POST /api/upload/product-image - загрузка изображения товара
+router.post('/upload/product-image', upload.single('image'), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Файл не загружен' });
+    }
+
+    // Перемещаем файл в папку product_images
+    const newFilename = `product_${Date.now()}_${path.basename(req.file.filename)}`;
+    const newPath = path.join(PRODUCT_IMAGES_DIR, newFilename);
+    
+    await fs.rename(req.file.path, newPath);
+    
+    const fileUrl = `/uploads/product_images/${newFilename}`;
+
+    res.json({
+      success: true,
+      url: fileUrl,
+      filename: newFilename,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    });
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({ error: 'Ошибка загрузки файла' });
+  }
+});
+
+// POST /api/upload/category-image - загрузка изображения категории
+router.post('/upload/category-image', upload.single('image'), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Файл не загружен' });
+    }
+
+    // Перемещаем файл в папку category_images
+    const newFilename = `category_${Date.now()}_${path.basename(req.file.filename)}`;
+    const newPath = path.join(CATEGORY_IMAGES_DIR, newFilename);
+    
+    await fs.rename(req.file.path, newPath);
+    
+    const fileUrl = `/uploads/category_images/${newFilename}`;
+
+    res.json({
+      success: true,
+      url: fileUrl,
+      filename: newFilename,
       size: req.file.size,
       mimetype: req.file.mimetype
     });

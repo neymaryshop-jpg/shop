@@ -1,48 +1,80 @@
+/* AdminDashboard.module.css - Тёмная тема */
+
 .container {
   min-height: 100vh;
-  background: #f5f5f5;
+  background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%);
+  padding: 20px;
 }
 
 .header {
-  background: white;
-  border-bottom: 1px solid #e1e5e9;
-  padding: 20px 0;
+  background: #16213e;
+  border-bottom: 2px solid #bb86fc;
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 30px;
 }
 
 .headerContent {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
 }
 
 .header h1 {
-  color: #333;
-  font-size: 1.5rem;
-  margin: 0;
+  background: linear-gradient(135deg, #bb86fc 0%, #03dac6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-size: 28px;
+  margin: 0 0 10px 0;
+}
+
+.adminNav {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.navLink {
+  color: #03dac6;
+  text-decoration: none;
+  padding: 10px 20px;
+  background: rgba(3, 218, 198, 0.1);
+  border: 1px solid #03dac6;
+  border-radius: 8px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.navLink:hover {
+  background: #03dac6;
+  color: #0f0f23;
+  transform: translateY(-2px);
 }
 
 .logoutButton {
-  background: #dc3545;
+  background: #cf6679;
   color: white;
   border: none;
   padding: 10px 20px;
   border-radius: 8px;
   cursor: pointer;
   font-weight: 600;
-  transition: background 0.3s;
+  transition: all 0.3s ease;
 }
 
 .logoutButton:hover {
-  background: #c82333;
+  background: #ff5252;
+  transform: translateY(-2px);
 }
 
 .main {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 20px;
 }
 
 .loading {
@@ -54,10 +86,10 @@
 }
 
 .spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #667eea;
+  width: 50px;
+  height: 50px;
+  border: 4px solid #2d2d44;
+  border-top: 4px solid #bb86fc;
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 20px;
@@ -69,9 +101,10 @@
 }
 
 .error {
-  background: #fee;
-  color: #c33;
-  padding: 12px;
+  background: rgba(207, 102, 121, 0.2);
+  border: 2px solid #cf6679;
+  color: #cf6679;
+  padding: 15px;
   border-radius: 8px;
   margin-bottom: 20px;
   text-align: center;
@@ -85,24 +118,35 @@
 }
 
 .statCard {
-  background: white;
+  background: #16213e;
   padding: 20px;
   border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  text-align: center;
+  border: 1px solid #2d2d44;
+  transition: all 0.3s ease;
+}
+
+.statCard:hover {
+  transform: translateY(-5px);
+  border-color: #bb86fc;
+  box-shadow: 0 10px 30px rgba(187, 134, 252, 0.2);
 }
 
 .statCard h3 {
-  color: #666;
-  font-size: 0.9rem;
+  color: #a0a0a0;
+  font-size: 14px;
   margin-bottom: 10px;
   text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .statNumber {
-  color: #333;
-  font-size: 2rem;
+  color: #ffffff;
+  font-size: 32px;
   font-weight: bold;
+  background: linear-gradient(135deg, #bb86fc 0%, #03dac6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   margin: 0;
 }
 
@@ -111,41 +155,47 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 15px;
 }
 
 .orders h2 {
-  color: #333;
+  background: linear-gradient(135deg, #bb86fc 0%, #03dac6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-size: 20px;
   margin: 0;
 }
 
 .viewAllButton {
-  background: #667eea;
-  color: white;
-  border: none;
-  padding: 10px 20px;
+  background: transparent;
+  border: 2px solid #bb86fc;
+  color: #bb86fc;
+  padding: 8px 16px;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 14px;
   font-weight: 600;
   transition: all 0.3s ease;
 }
 
 .viewAllButton:hover {
-  background: #5a67d8;
+  background: #bb86fc;
+  color: #0f0f23;
   transform: translateY(-2px);
 }
 
 .ordersTable {
-  background: white;
+  background: #16213e;
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  border: 1px solid #2d2d44;
 }
 
 .noOrders {
   text-align: center;
   padding: 40px;
-  color: #666;
+  color: #a0a0a0;
 }
 
 .orderRow {
@@ -153,7 +203,12 @@
   justify-content: space-between;
   align-items: center;
   padding: 20px;
-  border-bottom: 1px solid #e1e5e9;
+  border-bottom: 1px solid #2d2d44;
+  transition: background 0.3s ease;
+}
+
+.orderRow:hover {
+  background: #1a1a2e;
 }
 
 .orderRow:last-child {
@@ -161,14 +216,15 @@
 }
 
 .orderInfo h4 {
-  color: #333;
+  color: #ffffff;
   margin: 0 0 5px 0;
+  font-size: 16px;
 }
 
 .orderInfo p {
-  color: #666;
+  color: #a0a0a0;
   margin: 2px 0;
-  font-size: 0.9rem;
+  font-size: 14px;
 }
 
 .orderDetails {
@@ -176,43 +232,44 @@
 }
 
 .orderAmount {
-  color: #333;
+  color: #ffffff;
   font-weight: bold;
-  font-size: 1.1rem;
+  font-size: 18px;
   margin: 0 0 5px 0;
 }
 
 .status {
   padding: 4px 12px;
   border-radius: 20px;
-  font-size: 0.8rem;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
+  display: inline-block;
 }
 
 .status.pending {
-  background: #fff3cd;
-  color: #856404;
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffc107;
 }
 
 .status.awaiting_confirmation {
-  background: #cce5ff;
-  color: #004085;
+  background: rgba(3, 218, 198, 0.2);
+  color: #03dac6;
 }
 
 .status.confirmed {
-  background: #d4edda;
-  color: #155724;
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
 }
 
 .status.processing {
-  background: #e2e3e5;
-  color: #383d41;
+  background: rgba(187, 134, 252, 0.2);
+  color: #bb86fc;
 }
 
 .status.completed {
-  background: #d1ecf1;
-  color: #0c5460;
+  background: rgba(3, 218, 198, 0.2);
+  color: #03dac6;
 }
 
 .orderActions {
@@ -221,35 +278,46 @@
 }
 
 .confirmButton {
-  background: #28a745;
+  background: #4caf50;
   color: white;
   border: none;
   padding: 8px 16px;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 600;
-  transition: background 0.3s;
+  transition: all 0.3s;
 }
 
 .confirmButton:hover {
-  background: #218838;
+  background: #45a049;
+  transform: translateY(-2px);
 }
 
 @media (max-width: 768px) {
+  .headerContent {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .adminNav {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .stats {
+    grid-template-columns: 1fr;
+  }
+
   .orderRow {
     flex-direction: column;
     align-items: flex-start;
     gap: 15px;
   }
-  
+
   .orderDetails {
     align-self: stretch;
     display: flex;
     justify-content: space-between;
     align-items: center;
-  }
-  
-  .stats {
-    grid-template-columns: 1fr;
   }
 }

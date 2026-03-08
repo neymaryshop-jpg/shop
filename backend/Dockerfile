@@ -1,6 +1,14 @@
 # Build stage
 FROM node:18.20-alpine AS builder
 
+ARG NO_PROXY
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+
+ENV NO_PROXY=${NO_PROXY}
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+
 WORKDIR /app
 
 COPY package*.json ./
@@ -12,9 +20,19 @@ RUN npm run build
 # Production stage
 FROM node:18.20-alpine
 
+ARG NO_PROXY
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+
+ENV NO_PROXY=${NO_PROXY}
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV NODE_ENV=production
+
 WORKDIR /app
 
-ENV NODE_ENV=production
+# Установка wget для healthcheck
+RUN apk add --no-cache wget
 
 # Установка зависимостей
 COPY --from=builder /app/node_modules ./node_modules

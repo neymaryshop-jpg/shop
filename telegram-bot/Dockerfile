@@ -1,6 +1,14 @@
 # Build stage
 FROM python:3.9-slim AS builder
 
+ARG NO_PROXY
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+
+ENV NO_PROXY=${NO_PROXY}
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+
 WORKDIR /app
 
 # Установка зависимостей
@@ -10,10 +18,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Production stage
 FROM python:3.9-slim
 
-WORKDIR /app
+ARG NO_PROXY
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
 
+ENV NO_PROXY=${NO_PROXY}
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
+
+WORKDIR /app
 
 # Копирование установленных пакетов
 COPY --from=builder /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages

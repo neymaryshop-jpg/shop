@@ -3,13 +3,17 @@
 import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 import Link from 'next/link'
-import { useAuth } from '../context/AuthContext'
+import { TrustBadges } from './TrustBadges'
+import { FloatingCart } from './ConversionCTA'
+import { Header } from './Header'
+import { Footer } from './Footer'
+import { detectPlatformGroup, getCategoryPriority, getPlatformDisplayName } from '../utils/platformDetector'
 
 interface Product {
   id: number
   name: string
-  category_id: number
   category_name: string
+  category_slug: string
   price_android: number | string
   price_pc: number | string
   price_ios: number | string
@@ -27,106 +31,28 @@ interface Category {
   is_active: boolean
 }
 
-interface PaymentMethod {
-  id: string
-  name: string
-  icon: string
-  description: string
-  enabled: boolean
-  details: {
-    address?: string
-    network?: string
-    card_number?: string
-    card_holder?: string
-    bank_name?: string
-  }
-}
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api'
 
 function getPriceForPlatform(product: Product, platform: string): number {
   const price = product[`price_${platform}` as keyof Product]
   return typeof price === 'number' ? price : parseFloat(price as string) || 0
 }
 
-function ProductCard({ product, price, onClick }: {
-  product: Product
-  price: number
-  onClick: () => void
-}) {
-  const getCategoryIcon = (categoryName: string) => {
-    const icons: Record<string, string> = {
-      'Игры': '🎮',
-      'Подписки': '📺',
-      'Валюта': '💰',
-      'Аккаунты': '👤',
-      'ПО': '💻',
-      'Стриминг': '🎵'
-    }
-    return icons[categoryName] || '📦'
-  }
-
-  return (
-    <div
-      onClick={onClick}
-      className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-5 hover:from-purple-900/30 hover:to-pink-900/30 transition-all transform hover:scale-105 cursor-pointer border border-gray-700 hover:border-purple-500 shadow-lg hover:shadow-purple-500/20"
-    >
-      <div className="text-5xl mb-4 text-center">
-        {getCategoryIcon(product.category_name)}
-      </div>
-      <h3 className="font-bold text-white mb-2 text-base line-clamp-2 min-h-[3rem]">
-        {product.name}
-      </h3>
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-          {price.toFixed(2)}₽
-        </span>
-        <span className="text-xs text-gray-400">
-          {product.stock_quantity > 0 ? `В наличии: ${product.stock_quantity}` : 'Под заказ'}
-        </span>
-      </div>
-      <button className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold py-3 rounded-lg transition-all">
-        Купить
-      </button>
-      {product.sales_count > 0 && (
-        <div className="mt-2 text-center text-xs text-gray-500">
-          Продано: {product.sales_count}
-        </div>
-      )}
-    </div>
-  )
-}
-
 export default function Homepage() {
-  const { user, logout } = useAuth()
   const [categories, setCategories] = useState<Category[]>([])
   const [products, setProducts] = useState<Product[]>([])
-  const [newArrivals, setNewArrivals] = useState<Product[]>([])
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
-  const [selectedCategory, setSelectedCategory] = useState('all')
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
-  const [userPlatform, setUserPlatform] = useState<'android' | 'pc' | 'ios'>('android')
+  const [userPlatform, setUserPlatform] = useState<'android' | 'pc' | 'ios'>('pc')
+  const [platformGroup, setPlatformGroup] = useState<'standard' | 'premium'>('standard')
+  const [cartCount, setCartCount] = useState(0)
 
   useEffect(() => {
-    const savedPlatform = localStorage.getItem('user_platform') as 'android' | 'pc' | 'ios' | null
-    if (savedPlatform) {
-      setUserPlatform(savedPlatform)
-    } else {
-      // Auto-detect platform
-      const userAgent = navigator.userAgent.toLowerCase()
-      if (userAgent.includes('android')) {
-        setUserPlatform('android')
-      } else if (userAgent.includes('iphone') || userAgent.includes('ipad') || userAgent.includes('ipod')) {
-        setUserPlatform('ios')
-      } else {
-        setUserPlatform('pc')
-      }
-    }
+    // Определяем платформу и группу
+    const platformInfo = detectPlatformGroup()
+    setUserPlatform(platformInfo.platform === 'ios' ? 'ios' : platformInfo.platform === 'android' ? 'android' : 'pc')
+    setPlatformGroup(platformInfo.group)
+    localStorage.setItem('user_platform', platformInfo.platform === 'ios' ? 'ios' : platformInfo.platform === 'android' ? 'android' : 'pc')
   }, [])
-
-  
 
   useEffect(() => {
     loadInitialData()
@@ -134,19 +60,35 @@ export default function Homepage() {
 
   useEffect(() => {
     loadProducts()
-  }, [selectedCategory, searchQuery])
+  }, [userPlatform])
+
+  useEffect(() => {
+    // Обновляем счётчик корзины
+    const updateCartCount = () => {
+      try {
+        const cart = localStorage.getItem('cart')
+        const items = cart ? JSON.parse(cart) : []
+        setCartCount(Array.isArray(items) ? items.length : 0)
+      } catch {
+        setCartCount(0)
+      }
+    }
+
+    updateCartCount()
+    const handleStorage = () => updateCartCount()
+    window.addEventListener('storage', handleStorage)
+    const interval = setInterval(updateCartCount, 5000)
+
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      clearInterval(interval)
+    }
+  }, [])
 
   const loadInitialData = async () => {
     try {
-      setLoading(true)
-      const [categoriesRes, paymentMethodsRes, newArrivalsRes] = await Promise.all([
-        axios.get(`${API_URL}/categories`),
-        axios.get(`${API_URL}/payment-methods`),
-        axios.get(`${API_URL}/products/new-arrivals`)
-      ])
+      const categoriesRes = await axios.get(`${API_URL}/categories`)
       setCategories(categoriesRes.data)
-      setPaymentMethods(paymentMethodsRes.data)
-      setNewArrivals(newArrivalsRes.data)
     } catch (error) {
       console.error('Error loading initial data:', error)
     } finally {
@@ -156,242 +98,230 @@ export default function Homepage() {
 
   const loadProducts = async () => {
     try {
-      const params: any = {}
-      if (selectedCategory !== 'all') {
-        params.category = selectedCategory
-      }
-      if (searchQuery) {
-        params.search = searchQuery
-      }
-      const response = await axios.get(`${API_URL}/products`, { params })
-      setProducts(response.data)
+      const response = await axios.get(`${API_URL}/products`, { params: { limit: 12 } })
+      setProducts(response.data || [])
     } catch (error) {
       console.error('Error loading products:', error)
     }
   }
 
-  const handleLogout = async () => {
-    await logout()
+  // Platform-aware сортировка категорий
+  const getSortedCategories = () => {
+    const priority = getCategoryPriority(platformGroup)
+    
+    return [...categories].sort((a, b) => {
+      const aIndex = priority.findIndex(p => a.slug.includes(p) || p.includes(a.slug))
+      const bIndex = priority.findIndex(p => b.slug.includes(p) || p.includes(b.slug))
+      
+      // Категории в приоритете идут первыми
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex
+      if (aIndex !== -1) return -1
+      if (bIndex !== -1) return 1
+      
+      // Остальные по алфавиту
+      return a.name.localeCompare(b.name)
+    })
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-6xl mb-4 animate-spin">⚙️</div>
-          <p className="text-xl text-gray-400">Загрузка...</p>
-        </div>
-      </div>
-    )
-  }
+  const sortedCategories = getSortedCategories()
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      <nav className="fixed top-0 left-0 right-0 bg-gray-900/95 backdrop-blur-xl z-40 border-b border-gray-800">
-        <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <Link href="/" className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-            NeymaryShop
-          </Link>
-          <div className="hidden md:flex gap-8 text-sm">
-            <a href="#new-arrivals" className="hover:text-green-400 transition-colors">Новинки</a>
-            <a href="#catalog" className="hover:text-purple-400 transition-colors">Каталог</a>
-            <a href="#how-it-works" className="hover:text-purple-400 transition-colors">Как работает</a>
-          </div>
-          <div className="flex items-center gap-4">
-            {user ? (
-              <div className="flex items-center gap-4">
-                <Link href="/notifications" className="relative text-gray-300 hover:text-white">
-                  🔔
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-xs flex items-center justify-center">!</span>
-                </Link>
-                <Link href="/wishlist-page" className="text-gray-300 hover:text-white">
-                  ❤️
-                </Link>
-                <span className="text-gray-300">{user.email}</span>
-                <button
-                  onClick={handleLogout}
-                  className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg font-semibold transition-all"
-                >
-                  Выйти
-                </button>
-              </div>
-            ) : (
-              <>
-                <Link href="/wishlist-page" className="text-gray-300 hover:text-white hidden sm:block">
-                  ❤️ Избранное
-                </Link>
-                <Link href="/login" className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 px-6 py-2 rounded-lg font-semibold transition-all">
-                  Войти
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
-      </nav>
+    <div className="min-h-screen bg-[#0a0a0a] text-[#e0e0e0] flex flex-col">
+      {/* Header */}
+      <Header showCart={true} cartCount={cartCount} />
 
-      <section id="new-arrivals" className="pt-24 pb-12 px-4 bg-gradient-to-b from-gray-900 to-gray-800/50">
-        <div className="container mx-auto max-w-7xl">
-          <h2 className="text-4xl font-bold text-center mb-4">
-            <span className="bg-gradient-to-r from-green-400 to-blue-400 bg-clip-text text-transparent">
-              🔥 Новинки
-            </span>
-          </h2>
-          <p className="text-center text-gray-400 mb-8">
-            Свежие товары за последние 30 дней
+      {/* Hero Section */}
+      <section className="pt-24 pb-12 px-4 flex-shrink-0">
+        <div className="container mx-auto max-w-4xl text-center">
+          <h1 className="text-3xl md:text-5xl font-bold mb-4">
+            <span className="text-[#00ff9d]">Цифровые товары</span> с мгновенной выдачей
+          </h1>
+          <p className="text-gray-500 text-sm md:text-base mb-8 max-w-2xl mx-auto">
+            Автоматическая доставка кодов в течение 60 секунд после оплаты.
+            Безопасно. Анонимно. Надёжно.
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {newArrivals.slice(0, 8).map((product) => {
-              const price = getPriceForPlatform(product, userPlatform)
-              return (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  price={price}
-                  onClick={() => setSelectedProduct(product)}
-                />
-              )
-            })}
-          </div>
+          <TrustBadges />
 
-          {newArrivals.length === 0 && (
-            <div className="text-center py-12">
-              <div className="text-4xl mb-4">📦</div>
-              <p className="text-lg text-gray-400">Пока нет новинок</p>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section id="catalog" className="pt-12 pb-20 px-4">
-        <div className="container mx-auto max-w-7xl">
-          <h2 className="text-5xl font-bold text-center mb-4">
-            <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-              Каталог товаров
-            </span>
-          </h2>
-          <p className="text-center text-gray-400 mb-12">
-            Быстрая доставка • Гарантия возврата • Поддержка 24/7
-          </p>
-
-          <div className="mb-8">
-            <input
-              type="text"
-              placeholder="Поиск товаров..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full max-w-2xl mx-auto block bg-gray-800 border border-gray-700 rounded-xl px-6 py-4 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-all"
-            />
-          </div>
-
-          
-
-          <div className="flex flex-wrap justify-center gap-3 mb-12">
-            <button
-              onClick={() => setSelectedCategory('all')}
-              className={`px-6 py-3 rounded-xl font-semibold transition-all ${
-                selectedCategory === 'all'
-                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-              }`}
+          <div className="mt-8">
+            <Link
+              href="/catalog"
+              className="inline-block bg-[#00ff9d] text-black font-bold py-4 px-8 rounded-lg text-lg hover:bg-[#00cc7d] transition-all"
             >
-              Все товары
-            </button>
-            {categories.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(cat.slug)}
-                className={`px-6 py-3 rounded-xl font-semibold transition-all ${
-                  selectedCategory === cat.slug
-                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                }`}
-              >
-                {cat.name}
-              </button>
-            ))}
+              ПЕРЕЙТИ В КАТАЛОГ →
+            </Link>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {products.map((product) => {
-              const price = getPriceForPlatform(product, userPlatform)
-              return (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  price={price}
-                  onClick={() => setSelectedProduct(product)}
-                />
-              )
-            })}
+          {/* Platform badge */}
+          <div className="mt-6">
+            <span className="inline-flex items-center gap-2 bg-[#00ff9d]/10 border border-[#00ff9d]/30 rounded-full px-4 py-2 text-sm text-[#00ff9d]">
+              ⚡ Рекомендовано для {getPlatformDisplayName(userPlatform === 'ios' || userPlatform === 'android' ? userPlatform : 'pc')}
+              <Link href="/catalog" className="underline hover:opacity-80">
+                Показать все категории →
+              </Link>
+            </span>
           </div>
-
-          {products.length === 0 && (
-            <div className="text-center py-20">
-              <div className="text-6xl mb-4">😔</div>
-              <p className="text-xl text-gray-400">Товары не найдены</p>
-            </div>
-          )}
         </div>
       </section>
 
-      <section id="how-it-works" className="py-20 px-4 bg-gray-800/50">
-        <div className="container mx-auto max-w-5xl">
-          <h2 className="text-5xl font-bold text-center mb-16">Как это работает</h2>
-          <div className="grid md:grid-cols-4 gap-8">
+      {/* Categories - Platform aware */}
+      <section className="py-12 px-4 bg-[#111] flex-shrink-0">
+        <div className="container mx-auto max-w-6xl">
+          <h2 className="text-2xl font-bold text-center mb-2">
+            <span className="text-[#00ff9d]">Категории</span>
+          </h2>
+          <p className="text-gray-500 text-center text-sm mb-8">
+            {platformGroup === 'premium' 
+              ? 'Telegram, Apple и премиум сервисы' 
+              : 'Steam, Epic Games и игровые ключи'}
+          </p>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {sortedCategories.slice(0, 8).map((cat) => (
+              <Link
+                key={cat.slug}
+                href={`/catalog?category=${cat.slug}`}
+                className="bg-[#0a0a0a] hover:bg-[#1a1a1a] rounded-lg p-4 border border-gray-800 hover:border-[#00ff9d] transition-all group text-center"
+              >
+                <div className="text-3xl mb-2">{cat.icon_url || '📦'}</div>
+                <h3 className="font-semibold group-hover:text-[#00ff9d] transition-colors text-sm">
+                  {cat.name}
+                </h3>
+              </Link>
+            ))}
+
+            {/* Fixed popular categories */}
+            <Link href="/catalog?search=steam" className="bg-[#0a0a0a] hover:bg-[#1a1a1a] rounded-lg p-4 border border-gray-800 hover:border-[#00ff9d] transition-all group text-center">
+              <div className="text-3xl mb-2">🎮</div>
+              <h3 className="font-semibold group-hover:text-[#00ff9d] transition-colors text-sm">Steam</h3>
+            </Link>
+            {platformGroup === 'premium' ? (
+              <Link href="/catalog?search=telegram" className="bg-[#0a0a0a] hover:bg-[#1a1a1a] rounded-lg p-4 border border-gray-800 hover:border-[#00ff9d] transition-all group text-center">
+                <div className="text-3xl mb-2">✈️</div>
+                <h3 className="font-semibold group-hover:text-[#00ff9d] transition-colors text-sm">Telegram</h3>
+              </Link>
+            ) : (
+              <Link href="/catalog?search=discord" className="bg-[#0a0a0a] hover:bg-[#1a1a1a] rounded-lg p-4 border border-gray-800 hover:border-[#00ff9d] transition-all group text-center">
+                <div className="text-3xl mb-2">🎮</div>
+                <h3 className="font-semibold group-hover:text-[#00ff9d] transition-colors text-sm">Discord</h3>
+              </Link>
+            )}
+            <Link href="/catalog" className="bg-[#0a0a0a] hover:bg-[#1a1a1a] rounded-lg p-4 border border-gray-800 hover:border-[#00ff9d] transition-all group text-center">
+              <div className="text-3xl mb-2">🔍</div>
+              <h3 className="font-semibold group-hover:text-[#00ff9d] transition-colors text-sm">Все товары</h3>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Products */}
+      <section className="py-12 px-4 flex-shrink-0">
+        <div className="container mx-auto max-w-6xl">
+          <h2 className="text-2xl font-bold text-center mb-2">
+            <span className="text-[#00ff9d]">Популярные товары</span>
+          </h2>
+          <p className="text-gray-500 text-center text-sm mb-8">
+            Выбор покупателей за эту неделю
+          </p>
+
+          {loading ? (
+            <div className="text-center text-gray-500 py-12">Загрузка...</div>
+          ) : products.length === 0 ? (
+            <div className="text-center text-gray-500 py-12">
+              <div className="text-4xl mb-4">📦</div>
+              <p>Товары временно отсутствуют</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              {products.map((product) => {
+                const price = getPriceForPlatform(product, userPlatform)
+                const isLowStock = product.stock_quantity > 0 && product.stock_quantity <= 5
+
+                return (
+                  <Link
+                    key={product.id}
+                    href={`/product/${product.id}`}
+                    className="bg-[#111] rounded-lg overflow-hidden border border-gray-800 hover:border-[#00ff9d] transition-all group"
+                  >
+                    <div className="aspect-square bg-[#1a1a1a] flex items-center justify-center relative">
+                      {product.image_url ? (
+                        <img
+                          src={product.image_url}
+                          alt={product.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-4xl">📦</span>
+                      )}
+                      {isLowStock && (
+                        <div className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">
+                          🔥
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-3">
+                      <h3 className="font-semibold mb-2 line-clamp-2 text-sm group-hover:text-[#00ff9d] transition-colors min-h-[2.5rem]">
+                        {product.name}
+                      </h3>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#00ff9d] font-bold text-lg">
+                          {price.toFixed(2)}₽
+                        </span>
+                        {product.sales_count > 0 && (
+                          <span className="text-gray-600 text-xs">
+                            {product.sales_count}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          )}
+
+          <div className="text-center mt-8">
+            <Link
+              href="/catalog"
+              className="inline-block bg-[#111] border border-gray-800 hover:border-[#00ff9d] text-[#e0e0e0] font-semibold py-3 px-6 rounded-lg transition-all"
+            >
+              Смотреть все товары →
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works */}
+      <section className="py-12 px-4 bg-[#111] flex-shrink-0">
+        <div className="container mx-auto max-w-4xl">
+          <h2 className="text-2xl font-bold text-center mb-8">
+            Как это <span className="text-[#00ff9d]">работает</span>
+          </h2>
+
+          <div className="grid md:grid-cols-4 gap-6">
             {[
-              { num: '1', title: 'Выберите', desc: 'Найдите товар', icon: '🛒' },
-              { num: '2', title: 'Оплатите', desc: 'Крипта или карты', icon: '💳' },
-              { num: '3', title: 'Подтвердите', desc: 'Админ проверит', icon: '✅' },
-              { num: '4', title: 'Получите', desc: 'Код за 2 минуты', icon: '🎉' },
+              { num: '1', icon: '🛒', title: 'Выберите', desc: 'Найдите товар' },
+              { num: '2', icon: '💳', title: 'Оплатите', desc: 'Картой или криптой' },
+              { num: '3', icon: '⚡', title: 'Получите', desc: 'Код за 60 сек' },
+              { num: '4', icon: '🎧', title: 'Поддержка', desc: '24/7 на связи' },
             ].map((step) => (
               <div key={step.num} className="text-center">
-                <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-purple-600 to-pink-600 rounded-full flex items-center justify-center text-3xl font-bold">
+                <div className="w-16 h-16 mx-auto mb-4 bg-[#00ff9d]/10 rounded-full flex items-center justify-center text-2xl font-bold text-[#00ff9d]">
                   {step.num}
                 </div>
-                <div className="text-5xl mb-4">{step.icon}</div>
-                <h3 className="text-xl font-bold mb-2">{step.title}</h3>
-                <p className="text-gray-400 text-sm">{step.desc}</p>
+                <div className="text-4xl mb-3">{step.icon}</div>
+                <h3 className="font-bold text-white mb-1">{step.title}</h3>
+                <p className="text-gray-500 text-sm">{step.desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <footer className="bg-black py-12 px-4">
-        <div className="container mx-auto text-center text-gray-400">
-          <div className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-4">
-            NeymaryShop
-          </div>
-          <p className="mb-4">Быстрые и безопасные покупки цифровых товаров</p>
-          <div className="flex justify-center gap-6 text-sm">
-            <a href="#" className="hover:text-white">О нас</a>
-            <a href="#" className="hover:text-white">Поддержка</a>
-            <a href="#" className="hover:text-white">Telegram</a>
-          </div>
-          <div className="mt-6 text-xs text-gray-600">
-            © 2021-2026 NeymaryShop
-          </div>
-        </div>
-      </footer>
+      {/* Footer */}
+      <Footer />
 
-      {selectedProduct && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900 rounded-2xl max-w-md w-full p-6">
-            <h3 className="text-xl font-bold text-white mb-2">{selectedProduct.name}</h3>
-            <p className="text-2xl font-bold text-purple-400 mb-4">
-              {getPriceForPlatform(selectedProduct, userPlatform)}₽
-            </p>
-            <p className="text-gray-400 mb-4">{selectedProduct.category_name}</p>
-            <button
-              onClick={() => setSelectedProduct(null)}
-              className="w-full bg-gray-700 hover:bg-gray-600 py-3 rounded-lg font-semibold"
-            >
-              Закрыть
-            </button>
-          </div>
-        </div>
-      )}
+      <FloatingCart />
     </div>
   )
 }

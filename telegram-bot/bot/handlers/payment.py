@@ -2,7 +2,7 @@
 Хендлеры оплаты и доставки
 """
 import logging
-from aiogram import Router, F, types
+from aiogram import Router, F, types, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -23,48 +23,58 @@ class PaymentState(StatesGroup):
 # Канал для отзывов
 FEEDBACK_CHANNEL_ID = -1002168687623
 
+# Реквизиты
+PAYMENT_CARD = "2200 0000 0000 0000"
+PAYMENT_CARD_HOLDER = "ИОНЦЕВ К.К."
+PAYMENT_YOOMONEY = "410010000000000"
+PAYMENT_TON = "EQD..."
+
+# Юридические ссылки
+AGREEMENT_URL = "https://telegra.ph/Polzaovatelskoe-soglashenie"
+PRIVACY_URL = "https://telegra.ph/Politika-konfidencialnosti"
+
 
 @router.callback_query(F.data.startswith("pay_"))
 async def start_payment_callback(callback: types.CallbackQuery, state: FSMContext):
     """Начало оплаты - показываем реквизиты и юридический блок"""
     await state.clear()
-    
+
     # Получаем данные о товаре
     parts = callback.data.split(":")
     product_name = parts[0].replace("pay_", "") if len(parts) > 0 else "Товар"
     amount = parts[1] if len(parts) > 1 else "0"
-    
+
     payment_text = (
         f"💳 <b>Оплата заказа</b>\n\n"
         f"📦 <b>Товар:</b> {product_name}\n"
         f"💰 <b>Сумма:</b> {amount}₽\n\n"
         f"🏦 <b>Реквизиты для оплаты:</b>\n"
-        f"• Карта: 2200 7000 0000 0000\n"
-        f"• ЮMoney: 410010000000000\n"
-        f"• Crypto (TON): EQD...\n\n"
+        f"• Карта: <code>{PAYMENT_CARD}</code> ({PAYMENT_CARD_HOLDER})\n"
+        f"• ЮMoney: <code>{PAYMENT_YOOMONEY}</code>\n"
+        f"• Crypto (TON): <code>{PAYMENT_TON}</code>\n\n"
         f"📝 <b>Инструкция:</b>\n"
         f"1. Переведите сумму {amount}₽\n"
         f"2. Нажмите '✅ Я оплатил'\n"
         f"3. Ожидайте подтверждения\n\n"
         f"⚖️ <b>Юридическая информация:</b>\n"
-        f"Владелец: Ионцев К.К. (2012 г.р.)\n"
+        f"ИП Ионцев К.К.\n"
         f"Сделка между физическими лицами\n\n"
+        f"🔗 <a href='{AGREEMENT_URL}'>Пользовательское соглашение</a>\n"
+        f"🔗 <a href='{PRIVACY_URL}'>Политика конфиденциальности</a>\n\n"
         f"❗ <b>Важно:</b>\n"
-        f"Нажимая 'Оплатить', вы принимаете условия\n"
-        f"Пользовательского соглашения и Политики конфиденциальности\n\n"
-        f"📄 <a href='https://telegra.sh/neymaryshop-agreement'>Пользовательское соглашение</a>\n"
-        f"📄 <a href='https://telegra.sh/neymaryshop-privacy'>Политика конфиденциальности</a>"
+        f"Нажимая 'Оплатить', вы принимаете условия."
     )
-    
+
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Я оплатил", callback_data="payment_confirmed")
     builder.button(text="❌ Отмена", callback_data="cancel_payment")
     builder.adjust(1, 1)
-    
+
     await callback.message.edit_text(
         payment_text,
         reply_markup=builder.as_markup(),
-        parse_mode='HTML'
+        parse_mode='HTML',
+        disable_web_page_preview=True
     )
     await callback.answer()
 
@@ -120,9 +130,9 @@ async def process_auto_delivery(callback: types.CallbackQuery, state: FSMContext
         
         # Обновляем заказ
         await db.update_order_status(order_id, 'completed')
-        
+
         # Запрашиваем отзыв
-        await request_feedback(callback.from_user.id, order_id)
+        await request_feedback(callback.from_user.id, order_id, callback.bot)
     else:
         # Кодов нет - ручная доставка
         await callback.message.edit_text(
@@ -184,16 +194,15 @@ async def receive_customer_data(message: types.Message, state: FSMContext):
     await state.clear()
 
 
-async def request_feedback(user_id: int, order_id: int):
+async def request_feedback(user_id: int, order_id: int, bot: Bot):
     """Запрос отзыва после завершения заказа"""
     builder = InlineKeyboardBuilder()
     builder.button(text="⭐ Оставить отзыв", callback_data=f"feedback_leave:{order_id}")
     builder.button(text="⏭️ Пропустить", callback_data=f"feedback_skip:{order_id}")
     builder.adjust(1, 1)
-    
+
     try:
-        await types.BotCommand
-        await types.BotApi.send_message(
+        await bot.send_message(
             user_id,
             "🎉 <b>Заказ выполнен!</b>\n\n"
             "Пожалуйста, оставьте отзыв о качестве обслуживания.\n"

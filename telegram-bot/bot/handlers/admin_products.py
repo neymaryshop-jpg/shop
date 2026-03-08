@@ -96,28 +96,33 @@ async def process_product_price(message: types.Message, state: FSMContext):
     try:
         price = float(message.text.replace(',', '.').replace('₽', '').strip())
         data = await state.get_data()
-        
-        # TODO: Добавить товар в БД
-        # await db.add_product(
-        #     name=data['product_name'],
-        #     price=price,
-        #     delivery_type=data['delivery_type']
-        # )
-        
-        await message.answer(
-            f"✅ <b>Товар добавлен!</b>\n\n"
-            f"📦 {data['product_name']}\n"
-            f"💰 {price}₽\n"
-            f"🔑 Тип: {'Авто' if data['delivery_type'] == 'auto' else 'Ручная'}",
-            parse_mode='HTML'
+
+        # Добавляем товар в БД
+        product_id = await db.add_product(
+            name=data['product_name'],
+            price=price,
+            delivery_type=data['delivery_type'],
+            description=f"Товар добавлен через бота"
         )
+
+        if product_id:
+            await message.answer(
+                f"✅ <b>Товар добавлен!</b>\n\n"
+                f"📦 {data['product_name']}\n"
+                f"💰 {price}₽\n"
+                f"🔑 Тип: {'Авто' if data['delivery_type'] == 'auto' else 'Ручная'}\n"
+                f"🆔 ID: {product_id}",
+                parse_mode='HTML'
+            )
+        else:
+            await message.answer("❌ Ошибка при добавлении товара", parse_mode='HTML')
     except ValueError:
         await message.answer(
             "❌ Некорректная цена. Отправьте число:",
             parse_mode='HTML'
         )
         return
-    
+
     await state.clear()
 
 
